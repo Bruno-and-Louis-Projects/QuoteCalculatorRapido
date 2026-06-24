@@ -17,13 +17,14 @@ const cfg = JSON.parse(readFileSync(new URL("../pricing.config.json", import.met
 // Wrap so each call uses the loaded config, matching how the Worker calls it.
 const quote = (input) => computeQuote(input, cfg);
 
-// Base move used across the doc examples: 4½, 3 movers, 35 km.
-const BASE = { size: "4.5", movers: 3, distanceKm: 35, flags: [] };
+// Base move used across the doc examples: 4½ (auto-derives 3 movers), 35 km.
+const BASE = { size: "4.5", service: "residentiel", distanceKm: 35, flags: [] };
 
 test("§8 — March move (season ×1.00) → 1241.73", () => {
   const r = quote({ ...BASE, date: "2026-03-15" });
   assert.equal(r.ok, true);
   assert.equal(r.type, "instant_quote");
+  assert.equal(r.breakdown.movers, 3); // derived from size 4½
   assert.equal(r.total, 1241.73);
 });
 
@@ -51,10 +52,23 @@ test("exclusion: special flag (piano) → custom_quote (reason: special)", () =>
   assert.equal(r.reason, "special");
 });
 
-test("validation: bad size + out-of-range movers → ok:false with errors", () => {
-  const r = quote({ size: "9.9", movers: 99, distanceKm: 10, date: "2026-03-15" });
+test("service: non-residential → custom_quote (reason: service)", () => {
+  const r = quote({ ...BASE, date: "2026-03-15", service: "commercial" });
+  assert.equal(r.type, "custom_quote");
+  assert.equal(r.reason, "service");
+});
+
+test("movers: derived per size (2½ → 2, maison → 4)", () => {
+  const studio = quote({ ...BASE, size: "2.5", date: "2026-03-15" });
+  const maison = quote({ ...BASE, size: "maison", date: "2026-03-15" });
+  assert.equal(studio.breakdown.movers, 2);
+  assert.equal(maison.breakdown.movers, 4);
+});
+
+test("validation: bad size → ok:false with 'type de logement invalide'", () => {
+  const r = quote({ ...BASE, size: "9.9", date: "2026-03-15" });
   assert.equal(r.ok, false);
-  assert.ok(r.errors.length >= 2);
+  assert.ok(r.errors.includes("type de logement invalide"));
 });
 
 test("validation: invalid date → ok:false with 'date invalide'", () => {

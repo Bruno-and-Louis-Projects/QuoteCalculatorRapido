@@ -37,9 +37,16 @@ MONDAY_GROUP_ID = "topics"
 MONDAY_COL_PHONE        = "phone_mm2m8m7s"     # Téléphone (phone)
 MONDAY_COL_EMAIL        = "email_mm2m1mmg"     # Adresse Courriel (email)
 MONDAY_COL_CLIENT_NAME  = "text_mm2m4rx1"      # Nom du client (text)
+MONDAY_COL_ORIGIN       = "text_mm2m31jw"      # Adresse de Départ (Extract) (text)
+MONDAY_COL_DEST         = "text_mm2mxbds"      # Adresse de Destination (Extract) (text)
+MONDAY_COL_SERVICE      = "color_mm2msnf5"     # Service (status)
+MONDAY_COL_PROVENANCE   = "color_mm2m5yvt"     # Provenance (status)
 MONDAY_COL_SERVICE_DATE = "date_mm2mzac7"      # Date de service (date) = moving date
 MONDAY_COL_CONTACT_DATE = "date_mm2mjfdg"      # Date contact (date) = submission date
 MONDAY_COL_DETAILS      = "long_text_mm2m85we" # Détails / Projet (long_text) = full quote
+# Addresses use the text "(Extract)" columns. The location-pin columns
+# (location_mm2m9m5y / location_mm2m5srv) need lat/lng from a maps API — a
+# later upgrade per SPEC §6.
 
 # ---------------------------------------------------------------------------
 # Secret (do NOT put in this file). Set it once with:

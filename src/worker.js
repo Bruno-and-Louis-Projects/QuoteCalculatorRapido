@@ -54,8 +54,8 @@ export default {
     // --- Pricing ---
     const quoteInput = {
       size: body?.size,
-      movers: toNumber(body?.movers),
-      distanceKm: toNumber(body?.distanceKm),
+      service: body?.service,                 // residentiel | commercial | ...
+      distanceKm: toNumber(body?.distanceKm),  // movers is derived from size, not sent
       date: body?.date,
       flags: Array.isArray(body?.flags) ? body.flags : [],
     };
@@ -69,17 +69,22 @@ export default {
     // --- Create the Monday lead (instant quotes AND custom-quote requests) ---
     // We want the lead either way: an instant quote is a hot lead, and a
     // custom-quote case is one Bruno needs to follow up on manually.
-    const contact = {
+    const lead = {
       name: clean(body?.name),
       phone: clean(body?.phone),
       email: clean(body?.email),
+      originAddress: clean(body?.originAddress),
+      destAddress: clean(body?.destAddress),
+      provenance: clean(body?.provenance),
+      // Exact Monday status label for the chosen service.
+      serviceLabel: pricingConfig.services?.[quoteInput.service]?.label || "",
     };
 
     // Don't let a Monday outage block the customer's quote: fire it but still
     // return the price. ctx.waitUntil keeps the request alive for the call.
     if (isConfigured(env.MONDAY_TOKEN) && isConfigured(env.MONDAY_BOARD_ID)) {
       ctx.waitUntil(
-        createMondayLead({ contact, input: quoteInput, result, env }).catch((err) => {
+        createMondayLead({ lead, input: quoteInput, result, env }).catch((err) => {
           console.error("Monday lead creation failed:", err?.message || err);
         })
       );
@@ -97,18 +102,22 @@ export default {
 // cover the common types (text / phone / email / numbers / date). If a board
 // column is a different type, adjust the matching line in buildColumnValues().
 // ---------------------------------------------------------------------------
-async function createMondayLead({ contact, input, result, env }) {
-  const columnValues = buildColumnValues({ contact, input, result, env });
+async function createMondayLead({ lead, input, result, env }) {
+  const columnValues = buildColumnValues({ lead, input, result, env });
 
-  const itemName = contact.name || contact.email || contact.phone || "Soumission web";
+  const itemName = lead.name || lead.email || lead.phone || "Soumission web";
 
+  // create_labels_if_missing lets status columns (Service, Provenance) accept a
+  // label even if it isn't pre-defined on the board, instead of failing the
+  // whole item. We still send the exact known labels.
   const query = `
     mutation ($boardId: ID!, $groupId: String, $itemName: String!, $columnValues: JSON) {
       create_item(
         board_id: $boardId,
         group_id: $groupId,
         item_name: $itemName,
-        column_values: $columnValues
+        column_values: $columnValues,
+        create_labels_if_missing: true
       ) { id }
     }`;
 
@@ -137,25 +146,41 @@ async function createMondayLead({ contact, input, result, env }) {
 }
 
 // Maps our lead fields onto the "New Leads Automatic Quote BETA" board columns.
-// The board has no dedicated size/movers/distance/total columns, so contact
-// fields map to their real columns and the full quote breakdown goes into the
-// "Détails / Projet" long-text column. Each MONDAY_COL_* var is a column ID; an
-// unset (empty / "<PLACEHOLDER>") var is simply skipped.
-function buildColumnValues({ contact, input, result, env }) {
+// The board has no dedicated size/movers/distance/total columns, so the full
+// quote breakdown goes into the "Détails / Projet" long-text column. Addresses
+// map to the text "(Extract)" columns (location-pin columns need geocoding).
+// Each MONDAY_COL_* var is a column ID; an unset (empty / "<PLACEHOLDER>") var
+// is simply skipped.
+function buildColumnValues({ lead, input, result, env }) {
   const cv = {};
   const colId = (v) => (isConfigured(v) ? v : null);
 
   // Téléphone (phone): { phone, countryShortName }
-  if (colId(env.MONDAY_COL_PHONE) && contact.phone) {
-    cv[env.MONDAY_COL_PHONE] = { phone: contact.phone, countryShortName: "CA" };
+  if (colId(env.MONDAY_COL_PHONE) && lead.phone) {
+    cv[env.MONDAY_COL_PHONE] = { phone: lead.phone, countryShortName: "CA" };
   }
   // Adresse Courriel (email): { email, text }
-  if (colId(env.MONDAY_COL_EMAIL) && contact.email) {
-    cv[env.MONDAY_COL_EMAIL] = { email: contact.email, text: contact.email };
+  if (colId(env.MONDAY_COL_EMAIL) && lead.email) {
+    cv[env.MONDAY_COL_EMAIL] = { email: lead.email, text: lead.email };
   }
   // Nom du client (text)
-  if (colId(env.MONDAY_COL_CLIENT_NAME) && contact.name) {
-    cv[env.MONDAY_COL_CLIENT_NAME] = contact.name;
+  if (colId(env.MONDAY_COL_CLIENT_NAME) && lead.name) {
+    cv[env.MONDAY_COL_CLIENT_NAME] = lead.name;
+  }
+  // Adresses de départ / destination (text)
+  if (colId(env.MONDAY_COL_ORIGIN) && lead.originAddress) {
+    cv[env.MONDAY_COL_ORIGIN] = lead.originAddress;
+  }
+  if (colId(env.MONDAY_COL_DEST) && lead.destAddress) {
+    cv[env.MONDAY_COL_DEST] = lead.destAddress;
+  }
+  // Service (status): { label } — exact board label
+  if (colId(env.MONDAY_COL_SERVICE) && lead.serviceLabel) {
+    cv[env.MONDAY_COL_SERVICE] = { label: lead.serviceLabel };
+  }
+  // Provenance (status): { label } — value comes straight from the form select
+  if (colId(env.MONDAY_COL_PROVENANCE) && lead.provenance) {
+    cv[env.MONDAY_COL_PROVENANCE] = { label: lead.provenance };
   }
   // Date de service (date): the moving date → { date: "YYYY-MM-DD" }
   if (colId(env.MONDAY_COL_SERVICE_DATE) && input.date) {
@@ -167,7 +192,7 @@ function buildColumnValues({ contact, input, result, env }) {
   }
   // Détails / Projet (long_text): the full quote breakdown
   if (colId(env.MONDAY_COL_DETAILS)) {
-    cv[env.MONDAY_COL_DETAILS] = { text: buildDetails(input, result) };
+    cv[env.MONDAY_COL_DETAILS] = { text: buildDetails({ lead, input, result }) };
   }
 
   return cv;
@@ -175,14 +200,15 @@ function buildColumnValues({ contact, input, result, env }) {
 
 // Human-readable quote summary dropped into the "Détails / Projet" column so
 // Bruno sees the whole computation at a glance, instant or custom.
-function buildDetails(input, result) {
+function buildDetails({ lead, input, result }) {
   const flags = (input.flags || []).map(flagLabel).join(", ") || "aucun";
   const lines = [];
   if (result.type === "instant_quote") {
     const b = result.breakdown;
     lines.push("Soumission instantanée (calculateur web)");
+    lines.push(`Service : ${lead.serviceLabel || "Déménagement Résidentiel"}`);
     lines.push(`Logement : ${sizeLabel(input.size)}`);
-    lines.push(`Déménageurs : ${input.movers}`);
+    lines.push(`Déménageurs : ${b.movers}`);
     lines.push(`Distance : ${input.distanceKm} km`);
     lines.push(`Date du déménagement : ${input.date}`);
     lines.push(`Heures estimées : ${b.totalHours} h (travail ${b.workHours} + déplacement ${b.travelHours})`);
@@ -193,11 +219,13 @@ function buildDetails(input, result) {
   } else {
     lines.push("Soumission PERSONNALISÉE requise (calculateur web)");
     lines.push(`Raison : ${reasonLabel(result.reason)}`);
+    lines.push(`Service : ${lead.serviceLabel || "—"}`);
     lines.push(`Logement : ${sizeLabel(input.size)}`);
-    lines.push(`Déménageurs : ${input.movers}`);
     lines.push(`Distance : ${input.distanceKm} km`);
     lines.push(`Date du déménagement : ${input.date}`);
   }
+  lines.push(`Adresse de départ : ${lead.originAddress || "—"}`);
+  lines.push(`Adresse de destination : ${lead.destAddress || "—"}`);
   lines.push(`Éléments particuliers : ${flags}`);
   return lines.join("\n");
 }
@@ -271,6 +299,7 @@ const FLAG_LABELS = {
 function flagLabel(f) { return FLAG_LABELS[f] || f; }
 
 const REASON_LABELS = {
+  service: "Service non résidentiel (soumission sur mesure)",
   distance: "Distance supérieure à 700 km",
   size: "Type de logement à confirmer",
   special: "Élément particulier à évaluer",
