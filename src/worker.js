@@ -136,43 +136,70 @@ async function createMondayLead({ contact, input, result, env }) {
   return data;
 }
 
-// Maps our lead fields onto Monday column IDs. Each MONDAY_COL_* var is the
-// column ID on Bruno's board; if a var is unset, that field is simply skipped.
+// Maps our lead fields onto the "New Leads Automatic Quote BETA" board columns.
+// The board has no dedicated size/movers/distance/total columns, so contact
+// fields map to their real columns and the full quote breakdown goes into the
+// "Détails / Projet" long-text column. Each MONDAY_COL_* var is a column ID; an
+// unset (empty / "<PLACEHOLDER>") var is simply skipped.
 function buildColumnValues({ contact, input, result, env }) {
   const cv = {};
-  // Resolve a column ID only if it's really set — empty or a leftover
-  // "<PLACEHOLDER>" means "not mapped yet", so we skip it rather than send a
-  // bogus column ID (which Monday would reject for the whole item).
   const colId = (v) => (isConfigured(v) ? v : null);
-  const set = (id, value) => { const c = colId(id); if (c && value !== undefined && value !== null && value !== "") cv[c] = value; };
 
-  // text columns take a plain string
-  set(env.MONDAY_COL_SIZE, sizeLabel(input.size));
-  set(env.MONDAY_COL_MOVERS, String(input.movers));        // text or numbers col
-  set(env.MONDAY_COL_DISTANCE, String(input.distanceKm));  // text or numbers col
-
-  // phone column: { phone, countryShortName }
+  // Téléphone (phone): { phone, countryShortName }
   if (colId(env.MONDAY_COL_PHONE) && contact.phone) {
     cv[env.MONDAY_COL_PHONE] = { phone: contact.phone, countryShortName: "CA" };
   }
-  // email column: { email, text }
+  // Adresse Courriel (email): { email, text }
   if (colId(env.MONDAY_COL_EMAIL) && contact.email) {
     cv[env.MONDAY_COL_EMAIL] = { email: contact.email, text: contact.email };
   }
-  // date column: { date: "YYYY-MM-DD" }
-  if (colId(env.MONDAY_COL_DATE) && input.date) {
-    cv[env.MONDAY_COL_DATE] = { date: input.date };
+  // Nom du client (text)
+  if (colId(env.MONDAY_COL_CLIENT_NAME) && contact.name) {
+    cv[env.MONDAY_COL_CLIENT_NAME] = contact.name;
   }
-  // total: numbers column wants a string; if it's a text column this still works
-  set(env.MONDAY_COL_TOTAL, result.type === "instant_quote" ? String(result.total) : "");
-
-  // Status/type so Bruno can tell instant quotes from custom-quote requests.
-  // If MONDAY_COL_TYPE is a status column use { label: "..." }; if text, a string.
-  if (colId(env.MONDAY_COL_TYPE)) {
-    cv[env.MONDAY_COL_TYPE] = { label: result.type === "instant_quote" ? "Soumission auto" : "Soumission perso" };
+  // Date de service (date): the moving date → { date: "YYYY-MM-DD" }
+  if (colId(env.MONDAY_COL_SERVICE_DATE) && input.date) {
+    cv[env.MONDAY_COL_SERVICE_DATE] = { date: input.date };
+  }
+  // Date contact (date): submission date = today (UTC)
+  if (colId(env.MONDAY_COL_CONTACT_DATE)) {
+    cv[env.MONDAY_COL_CONTACT_DATE] = { date: new Date().toISOString().slice(0, 10) };
+  }
+  // Détails / Projet (long_text): the full quote breakdown
+  if (colId(env.MONDAY_COL_DETAILS)) {
+    cv[env.MONDAY_COL_DETAILS] = { text: buildDetails(input, result) };
   }
 
   return cv;
+}
+
+// Human-readable quote summary dropped into the "Détails / Projet" column so
+// Bruno sees the whole computation at a glance, instant or custom.
+function buildDetails(input, result) {
+  const flags = (input.flags || []).map(flagLabel).join(", ") || "aucun";
+  const lines = [];
+  if (result.type === "instant_quote") {
+    const b = result.breakdown;
+    lines.push("Soumission instantanée (calculateur web)");
+    lines.push(`Logement : ${sizeLabel(input.size)}`);
+    lines.push(`Déménageurs : ${input.movers}`);
+    lines.push(`Distance : ${input.distanceKm} km`);
+    lines.push(`Date du déménagement : ${input.date}`);
+    lines.push(`Heures estimées : ${b.totalHours} h (travail ${b.workHours} + déplacement ${b.travelHours})`);
+    lines.push(`Tarif horaire : ${b.hourlyRate} $/h`);
+    lines.push(`Majoration saison : ×${b.seasonMult}`);
+    lines.push(`Sous-total : ${b.subtotal} $`);
+    lines.push(`TOTAL (taxes incl.) : ${result.total} $`);
+  } else {
+    lines.push("Soumission PERSONNALISÉE requise (calculateur web)");
+    lines.push(`Raison : ${reasonLabel(result.reason)}`);
+    lines.push(`Logement : ${sizeLabel(input.size)}`);
+    lines.push(`Déménageurs : ${input.movers}`);
+    lines.push(`Distance : ${input.distanceKm} km`);
+    lines.push(`Date du déménagement : ${input.date}`);
+  }
+  lines.push(`Éléments particuliers : ${flags}`);
+  return lines.join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -234,3 +261,18 @@ const SIZE_LABELS = {
   "2.5": "2½", "3.5": "3½", "4.5": "4½", "5.5": "5½", "6.5": "6½ et plus", maison: "Maison",
 };
 function sizeLabel(size) { return SIZE_LABELS[size] || size || ""; }
+
+// Labels for special-item flags and custom-quote reasons (used in the CRM note).
+const FLAG_LABELS = {
+  piano: "Piano", coffreFort: "Coffre-fort", objetArt: "Objet d'art",
+  accesDifficile: "Accès difficile", entreposage: "Entreposage",
+  adressesMultiples: "Adresses multiples", commercial: "Commercial",
+};
+function flagLabel(f) { return FLAG_LABELS[f] || f; }
+
+const REASON_LABELS = {
+  distance: "Distance supérieure à 700 km",
+  size: "Type de logement à confirmer",
+  special: "Élément particulier à évaluer",
+};
+function reasonLabel(r) { return REASON_LABELS[r] || r || ""; }
