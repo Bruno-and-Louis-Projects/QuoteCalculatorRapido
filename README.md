@@ -31,22 +31,42 @@ npm run dev        # local Worker at http://localhost:8787
 
 ## Go-live checklist
 
-Everything is built and tested. To put it live you still need a few values that
-only Bruno/LC can provide — fill them in, then deploy:
+The domain, the Monday board, and the column mapping are all wired in
+`wrangler.toml`. What's left:
 
-1. **`wrangler.toml` → `ALLOWED_ORIGIN`** — the live Rapido domain (locks CORS).
-2. **`wrangler.toml` → Monday IDs** — `MONDAY_BOARD_ID`, `MONDAY_GROUP_ID`, and
-   the `MONDAY_COL_*` column IDs (phone, email, size, movers, distance, date,
-   total, type). The customer **name** becomes the Monday item title.
-3. **Monday token (secret, never committed):**
-   ```bash
-   npx wrangler secret put MONDAY_TOKEN
-   ```
-4. **`elementor/widget.html` → `WORKER_URL`** — the deployed Worker URL ending
+1. **Monday token (secret, never committed)** — add `MONDAY_TOKEN` as an
+   encrypted secret in the Cloudflare dashboard
+   (Workers & Pages → `quotecalculatorrapido` → Settings → Variables and
+   Secrets → Encrypt), or via CLI: `npx wrangler secret put MONDAY_TOKEN`.
+2. **`elementor/widget.html` → `WORKER_URL`** — the deployed Worker URL ending
    in `/quote` (and `CONTACT_URL` for the custom-quote button).
-5. **Deploy:** `npm run deploy`
-6. Paste `widget.html` into an Elementor HTML widget (or WPCode if a security
+3. **Deploy** — merge to `main` (the connected Workers Build deploys), or run
+   `npm run deploy` locally.
+4. Paste `widget.html` into an Elementor HTML widget (or WPCode if a security
    plugin strips inline `<script>` — see SPEC §6), and send one real test lead.
+
+## Monday lead mapping
+
+Leads land on board **New Leads Automatic Quote BETA** (`18419200008`), group
+`topics` ("Nouveau Leads"). The board has no size/movers/distance/total columns,
+so the full quote breakdown is written to the **Détails / Projet** long-text
+column. Current mapping (`wrangler.toml` + `buildColumnValues()` in
+`src/worker.js`):
+
+| Lead field | Monday column | ID |
+|---|---|---|
+| Customer name | item title + Nom du client | `text_mm2m4rx1` |
+| Phone | Téléphone | `phone_mm2m8m7s` |
+| Email | Adresse Courriel | `email_mm2m1mmg` |
+| Moving date | Date de service | `date_mm2mzac7` |
+| Submission date | Date contact | `date_mm2mjfdg` |
+| Size / movers / distance / hours / season / subtotal / total / flags | Détails / Projet | `long_text_mm2m85we` |
+
+Status columns (Statut, Service, Provenance) are intentionally left unset —
+setting a label that doesn't already exist on the board would fail the whole
+`create_item`. To populate one, add its column ID and use the exact existing
+label text. A var left empty or as a `<PLACEHOLDER>` is skipped, so partial
+mappings never break lead creation.
 
 ## Notes
 

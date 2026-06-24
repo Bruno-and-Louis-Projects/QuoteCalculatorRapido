@@ -17,31 +17,29 @@ compatibility_date = "2025-01-01"
 # ---------------------------------------------------------------------------
 [vars]
 # CORS — lock to Rapido's live origin(s). Comma-separated if more than one.
-# Example: "https://www.servicerapido.ca,https://servicerapido.ca"
-ALLOWED_ORIGIN = "https://<RAPIDO-DOMAIN>"
+ALLOWED_ORIGIN = "https://servicerapido.com,https://www.servicerapido.com"
 
 # Basic per-IP rate limit (abuse guard). Tune after watching real traffic.
 RATE_LIMIT_WINDOW_MS = "60000"
 RATE_LIMIT_MAX = "8"
 
-# --- Monday.com board (from Bruno) ---
-MONDAY_BOARD_ID = "<BOARD_ID>"
-MONDAY_GROUP_ID = "<GROUP_ID>"
+# --- Monday.com board: "New Leads Automatic Quote BETA" ---
+# https://grouperapido.monday.com/boards/18419200008
+MONDAY_BOARD_ID = "18419200008"
+# "topics" = the top group "Nouveau Leads". Empty would also default here.
+MONDAY_GROUP_ID = "topics"
 
-# --- Monday.com column IDs (from Bruno) ---
-# Each is the column's ID on the target board. Leave blank to skip that field.
-# The value FORMAT depends on the column TYPE — see buildColumnValues() in
-# src/worker.js if a column isn't text/phone/email/numbers/date/status.
-MONDAY_COL_PHONE    = "<COL_ID_PHONE>"     # phone column
-MONDAY_COL_EMAIL    = "<COL_ID_EMAIL>"     # email column
-MONDAY_COL_SIZE     = "<COL_ID_SIZE>"      # text column
-MONDAY_COL_MOVERS   = "<COL_ID_MOVERS>"    # text or numbers column
-MONDAY_COL_DISTANCE = "<COL_ID_DISTANCE>"  # text or numbers column
-MONDAY_COL_DATE     = "<COL_ID_DATE>"      # date column
-MONDAY_COL_TOTAL    = "<COL_ID_TOTAL>"     # numbers column
-MONDAY_COL_TYPE     = "<COL_ID_TYPE>"      # status column (auto vs perso)
-# Note: the customer NAME maps to the Monday item title (item_name), so it does
-# not need its own column ID.
+# --- Monday.com column IDs (mapped to this board) ---
+# Contact fields map to their real columns; size/movers/distance/total have no
+# dedicated columns on this board, so the full quote breakdown is written to the
+# "Détails / Projet" long-text column instead. The customer NAME is the item
+# title (item_name) and is also mirrored to "Nom du client".
+MONDAY_COL_PHONE        = "phone_mm2m8m7s"     # Téléphone (phone)
+MONDAY_COL_EMAIL        = "email_mm2m1mmg"     # Adresse Courriel (email)
+MONDAY_COL_CLIENT_NAME  = "text_mm2m4rx1"      # Nom du client (text)
+MONDAY_COL_SERVICE_DATE = "date_mm2mzac7"      # Date de service (date) = moving date
+MONDAY_COL_CONTACT_DATE = "date_mm2mjfdg"      # Date contact (date) = submission date
+MONDAY_COL_DETAILS      = "long_text_mm2m85we" # Détails / Projet (long_text) = full quote
 
 # ---------------------------------------------------------------------------
 # Secret (do NOT put in this file). Set it once with:
