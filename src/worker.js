@@ -12,6 +12,7 @@
 // only does transport, abuse-guarding, and the Monday side effect.
 
 import { computeQuote } from "../pricing.js";
+import pricingConfig from "../pricing.config.json"; // bundler inlines this JSON
 
 export default {
   async fetch(request, env, ctx) {
@@ -59,7 +60,7 @@ export default {
       flags: Array.isArray(body?.flags) ? body.flags : [],
     };
 
-    const result = computeQuote(quoteInput);
+    const result = computeQuote(quoteInput, pricingConfig);
 
     if (!result.ok) {
       return json(result, 400, cors);
