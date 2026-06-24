@@ -1,0 +1,48 @@
+# wrangler.toml — Cloudflare Worker config for the Rapido quote tool.
+#
+# Deploy:   npx wrangler deploy
+# Secret:   npx wrangler secret put MONDAY_TOKEN     (never commit the token)
+# Dev:      npx wrangler dev
+#
+# The [vars] below are NON-secret config. Fill the placeholders with the real
+# values from Bruno (Monday IDs) and LC (the live Rapido domain), then deploy.
+
+name = "rapido-quote"
+main = "src/worker.js"
+compatibility_date = "2025-01-01"
+
+# ---------------------------------------------------------------------------
+# Non-secret configuration (safe to commit). Replace every <PLACEHOLDER>.
+# ---------------------------------------------------------------------------
+[vars]
+# CORS — lock to Rapido's live origin(s). Comma-separated if more than one.
+# Example: "https://www.servicerapido.ca,https://servicerapido.ca"
+ALLOWED_ORIGIN = "https://<RAPIDO-DOMAIN>"
+
+# Basic per-IP rate limit (abuse guard). Tune after watching real traffic.
+RATE_LIMIT_WINDOW_MS = "60000"
+RATE_LIMIT_MAX = "8"
+
+# --- Monday.com board (from Bruno) ---
+MONDAY_BOARD_ID = "<BOARD_ID>"
+MONDAY_GROUP_ID = "<GROUP_ID>"
+
+# --- Monday.com column IDs (from Bruno) ---
+# Each is the column's ID on the target board. Leave blank to skip that field.
+# The value FORMAT depends on the column TYPE — see buildColumnValues() in
+# src/worker.js if a column isn't text/phone/email/numbers/date/status.
+MONDAY_COL_PHONE    = "<COL_ID_PHONE>"     # phone column
+MONDAY_COL_EMAIL    = "<COL_ID_EMAIL>"     # email column
+MONDAY_COL_SIZE     = "<COL_ID_SIZE>"      # text column
+MONDAY_COL_MOVERS   = "<COL_ID_MOVERS>"    # text or numbers column
+MONDAY_COL_DISTANCE = "<COL_ID_DISTANCE>"  # text or numbers column
+MONDAY_COL_DATE     = "<COL_ID_DATE>"      # date column
+MONDAY_COL_TOTAL    = "<COL_ID_TOTAL>"     # numbers column
+MONDAY_COL_TYPE     = "<COL_ID_TYPE>"      # status column (auto vs perso)
+# Note: the customer NAME maps to the Monday item title (item_name), so it does
+# not need its own column ID.
+
+# ---------------------------------------------------------------------------
+# Secret (do NOT put in this file). Set it once with:
+#   npx wrangler secret put MONDAY_TOKEN
+# ---------------------------------------------------------------------------

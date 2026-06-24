@@ -1,0 +1,57 @@
+{
+  "_meta": "Groupe Rapido — résidentiel. Single source of truth for rates. Bruno/LC edit numbers here; logic in pricing.js never changes.",
+  "currency": "CAD",
+  "taxMultiplier": 1.14975,
+  "_taxNote": "TPS 5% + TVQ 9.975% applied on the subtotal.",
+
+  "hourlyRate": {
+    "base": 90,
+    "perMover": 30,
+    "minMovers": 1,
+    "maxMovers": 5,
+    "_formula": "base + perMover * movers  ->  120 / 150 / 180 / 210 / 240 for 1-5 movers"
+  },
+
+  "sizes": {
+    "2.5":    { "label": "2½ (studio / 1 chambre)", "workHours": 2.5, "autoQuote": true,  "_watch": "Faible échantillon (5 dossiers). Candidate to flip autoQuote->false after testing." },
+    "3.5":    { "label": "3½",                      "workHours": 4.0, "autoQuote": true },
+    "4.5":    { "label": "4½",                      "workHours": 5.0, "autoQuote": true },
+    "5.5":    { "label": "5½",                      "workHours": 5.5, "autoQuote": true },
+    "6.5":    { "label": "6½ et plus",              "workHours": 6.0, "autoQuote": true,  "_watch": "Très faible échantillon (1 dossier). Candidate to flip autoQuote->false." },
+    "maison": { "label": "Maison (unifamiliale)",   "workHours": 5.5, "autoQuote": true,  "_watch": "Forte variabilité (écart-type 3,5h, 2h à 16h réel). Likely flip autoQuote->false." }
+  },
+
+  "travel": {
+    "localThresholdKm": 40,
+    "localHours": 1.0,
+    "speedKmh": 90,
+    "roundToHours": 0.5,
+    "_formula": "<=40km -> 1.0h forfait local; else round_nearest_0.5(distance / 90)"
+  },
+
+  "season": [
+    { "from": "01-01", "to": "04-30", "multiplier": 1.00 },
+    { "from": "05-01", "to": "05-31", "multiplier": 1.15 },
+    { "from": "06-01", "to": "06-07", "multiplier": 1.35 },
+    { "from": "06-08", "to": "06-14", "multiplier": 1.25 },
+    { "from": "06-15", "to": "06-17", "multiplier": 1.25 },
+    { "from": "06-18", "to": "06-21", "multiplier": 1.30 },
+    { "from": "06-22", "to": "06-25", "multiplier": 1.40 },
+    { "from": "06-26", "to": "06-28", "multiplier": 1.45 },
+    { "from": "06-29", "to": "06-29", "multiplier": 1.65 },
+    { "from": "06-30", "to": "06-30", "multiplier": 1.90 },
+    { "from": "07-01", "to": "07-01", "multiplier": 2.50 },
+    { "from": "07-02", "to": "07-02", "multiplier": 1.15 },
+    { "from": "07-03", "to": "07-03", "multiplier": 1.25 },
+    { "from": "07-04", "to": "07-05", "multiplier": 1.00 },
+    { "from": "07-06", "to": "12-31", "multiplier": 1.00 }
+  ],
+  "_seasonDefault": 1.00,
+  "_seasonNote": "First matching band wins. Bands are MM-DD, recurring every year, no year-wrap.",
+
+  "exclusions": {
+    "maxDistanceKm": 700,
+    "specialFlags": ["piano", "coffreFort", "objetArt", "accesDifficile", "entreposage", "adressesMultiples", "commercial"],
+    "_note": "Any match -> response type 'custom_quote' (no final price). Size-level exclusion is driven by sizes[*].autoQuote, not here."
+  }
+}
