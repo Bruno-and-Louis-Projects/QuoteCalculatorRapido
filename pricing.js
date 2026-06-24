@@ -11,10 +11,15 @@
 //     date:       "YYYY-MM-DD" (moving date),
 //     flags:      string[]  (optional: "piano","coffreFort","adressesMultiples",...)
 //   }
+//
+// `cfg` is the parsed pricing.config.json, passed in by the caller. We don't
+// import the JSON here on purpose: a bare JSON import needs an import attribute
+// under Node 22 (`with { type: "json" }`) that the Worker's older bundler can't
+// parse, and the attribute syntax that one bundler wants the other rejects.
+// Decoupling sidesteps the whole mismatch — the Worker and the tests each load
+// the JSON the way their environment prefers and hand it in.
 
-import config from "./pricing.config.json" with { type: "json" };
-
-export function computeQuote(input, cfg = config) {
+export function computeQuote(input, cfg) {
   const errors = validate(input, cfg);
   if (errors.length) return { ok: false, errors };
 

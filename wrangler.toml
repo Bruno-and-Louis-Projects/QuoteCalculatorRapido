@@ -7,7 +7,8 @@
 # The [vars] below are NON-secret config. Fill the placeholders with the real
 # values from Bruno (Monday IDs) and LC (the live Rapido domain), then deploy.
 
-name = "rapido-quote"
+# Worker name must match the Cloudflare Workers Build connected to this repo.
+name = "quotecalculatorrapido"
 main = "src/worker.js"
 compatibility_date = "2025-01-01"
 
