@@ -58,15 +58,27 @@ column. Current mapping (`wrangler.toml` + `buildColumnValues()` in
 | Customer name | item title + Nom du client | `text_mm2m4rx1` |
 | Phone | Téléphone | `phone_mm2m8m7s` |
 | Email | Adresse Courriel | `email_mm2m1mmg` |
+| Origin address | Adresse de Départ (Extract) | `text_mm2m31jw` |
+| Destination address | Adresse de Destination (Extract) | `text_mm2mxbds` |
+| Service type | Service (status) | `color_mm2msnf5` |
+| Provenance | Provenance (status) | `color_mm2m5yvt` |
 | Moving date | Date de service | `date_mm2mzac7` |
 | Submission date | Date contact | `date_mm2mjfdg` |
 | Size / movers / distance / hours / season / subtotal / total / flags | Détails / Projet | `long_text_mm2m85we` |
 
-Status columns (Statut, Service, Provenance) are intentionally left unset —
-setting a label that doesn't already exist on the board would fail the whole
-`create_item`. To populate one, add its column ID and use the exact existing
-label text. A var left empty or as a `<PLACEHOLDER>` is skipped, so partial
-mappings never break lead creation.
+Notes on this mapping:
+
+- **Movers is derived from size** (`pricing.config.json` → `sizes[*].movers`),
+  not chosen by the client. 4½ = 3 keeps the doc §8 example at `1241.73`.
+- **Only `residentiel` is auto-priced.** Commercial / Livraison / Transport /
+  Sous-Traitance route to a `custom_quote` (reason `service`).
+- **Addresses use the text "(Extract)" columns.** The location-pin columns need
+  lat/lng from a maps API (SPEC §6 "later") — a plain address can't set a pin.
+- **Status columns** (Service, Provenance) are sent with `create_labels_if_missing`,
+  so a label that isn't pre-defined is created rather than failing the item.
+  The `Statut` column is left for Bruno's pipeline to set.
+- A var left empty or as a `<PLACEHOLDER>` is skipped, so partial mappings never
+  break lead creation.
 
 ## Notes
 

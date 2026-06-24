@@ -6,11 +6,12 @@
 // Input contract:
 //   {
 //     size:       "2.5" | "3.5" | "4.5" | "5.5" | "6.5" | "maison",
-//     movers:     1..5,
+//     service:    "residentiel" | "commercial" | "livraison" | "transportCommercial" | "sousTraitance",
 //     distanceKm: number >= 0,
 //     date:       "YYYY-MM-DD" (moving date),
 //     flags:      string[]  (optional: "piano","coffreFort","adressesMultiples",...)
 //   }
+// movers is NOT an input — it is derived from the size (cfg.sizes[size].movers).
 //
 // `cfg` is the parsed pricing.config.json, passed in by the caller. We don't
 // import the JSON here on purpose: a bare JSON import needs an import attribute
@@ -24,23 +25,25 @@ export function computeQuote(input, cfg) {
   if (errors.length) return { ok: false, errors };
 
   const sizeDef = cfg.sizes[input.size];
+  const service = input.service || "residentiel"; // default to residential
 
   // Route excluded cases to a custom quote instead of a (possibly wrong) final price.
-  const reason = checkExclusions(input, sizeDef, cfg);
+  const reason = checkExclusions(input, sizeDef, service, cfg);
   if (reason) {
     return {
       ok: true,
       type: "custom_quote",
-      reason, // "distance" | "size" | "special"
+      reason, // "service" | "distance" | "size" | "special"
       message: "Ce déménagement nécessite une soumission personnalisée."
     };
   }
 
+  const movers = sizeDef.movers; // derived from size, not chosen by the client
   const workHours = sizeDef.workHours;
   const travelHours = travelHoursFor(input.distanceKm, cfg);
   const totalHours = workHours + travelHours;
 
-  const hourlyRate = cfg.hourlyRate.base + cfg.hourlyRate.perMover * input.movers;
+  const hourlyRate = cfg.hourlyRate.base + cfg.hourlyRate.perMover * movers;
   const seasonMult = seasonMultiplier(input.date, cfg);
 
   const subtotal = round2(hourlyRate * totalHours * seasonMult);
@@ -50,8 +53,8 @@ export function computeQuote(input, cfg) {
     ok: true,
     type: "instant_quote",
     currency: cfg.currency,
-    inputs: { size: input.size, movers: input.movers, distanceKm: input.distanceKm, date: input.date },
-    breakdown: { hourlyRate, workHours, travelHours, totalHours, seasonMult, subtotal, taxMultiplier: cfg.taxMultiplier },
+    inputs: { size: input.size, service, movers, distanceKm: input.distanceKm, date: input.date },
+    breakdown: { hourlyRate, movers, workHours, travelHours, totalHours, seasonMult, subtotal, taxMultiplier: cfg.taxMultiplier },
     total
   };
 }
@@ -70,8 +73,10 @@ function seasonMultiplier(date, cfg) {
   return cfg._seasonDefault ?? 1.0;
 }
 
-function checkExclusions(input, sizeDef, cfg) {
+function checkExclusions(input, sizeDef, service, cfg) {
   const ex = cfg.exclusions;
+  // Non-residential services aren't covered by the residential pricing doc.
+  if (cfg.services?.[service]?.autoQuote === false) return "service";
   if (input.distanceKm > ex.maxDistanceKm) return "distance";
   if (sizeDef.autoQuote === false) return "size";
   if ((input.flags || []).some(f => ex.specialFlags.includes(f))) return "special";
@@ -80,10 +85,9 @@ function checkExclusions(input, sizeDef, cfg) {
 
 function validate(input, cfg) {
   const e = [];
-  if (!input || typeof input !== "object") return ["payload invalide"];
-  if (!cfg.sizes[input.size]) e.push("size invalide");
-  if (!(Number.isFinite(input.movers) && input.movers >= cfg.hourlyRate.minMovers && input.movers <= cfg.hourlyRate.maxMovers))
-    e.push("nombre de déménageurs hors plage (1-5)");
+  if (!input || typeof input !== "object") return ["données invalides"];
+  if (!cfg.sizes[input.size]) e.push("type de logement invalide");
+  if (input.service && !cfg.services?.[input.service]) e.push("service invalide");
   if (!(typeof input.distanceKm === "number" && input.distanceKm >= 0)) e.push("distance invalide");
   if (!isValidDate(input.date)) e.push("date invalide");
   return e;

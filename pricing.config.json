@@ -13,13 +13,23 @@
   },
 
   "sizes": {
-    "2.5":    { "label": "2½ (studio / 1 chambre)", "workHours": 2.5, "autoQuote": true,  "_watch": "Faible échantillon (5 dossiers). Candidate to flip autoQuote->false after testing." },
-    "3.5":    { "label": "3½",                      "workHours": 4.0, "autoQuote": true },
-    "4.5":    { "label": "4½",                      "workHours": 5.0, "autoQuote": true },
-    "5.5":    { "label": "5½",                      "workHours": 5.5, "autoQuote": true },
-    "6.5":    { "label": "6½ et plus",              "workHours": 6.0, "autoQuote": true,  "_watch": "Très faible échantillon (1 dossier). Candidate to flip autoQuote->false." },
-    "maison": { "label": "Maison (unifamiliale)",   "workHours": 5.5, "autoQuote": true,  "_watch": "Forte variabilité (écart-type 3,5h, 2h à 16h réel). Likely flip autoQuote->false." }
+    "2.5":    { "label": "2½ (studio / 1 chambre)", "workHours": 2.5, "movers": 2, "autoQuote": true,  "_watch": "Faible échantillon (5 dossiers). Candidate to flip autoQuote->false after testing." },
+    "3.5":    { "label": "3½",                      "workHours": 4.0, "movers": 2, "autoQuote": true },
+    "4.5":    { "label": "4½",                      "workHours": 5.0, "movers": 3, "autoQuote": true },
+    "5.5":    { "label": "5½",                      "workHours": 5.5, "movers": 3, "autoQuote": true },
+    "6.5":    { "label": "6½ et plus",              "workHours": 6.0, "movers": 4, "autoQuote": true,  "_watch": "Très faible échantillon (1 dossier). Candidate to flip autoQuote->false." },
+    "maison": { "label": "Maison (unifamiliale)",   "workHours": 5.5, "movers": 4, "autoQuote": true,  "_watch": "Forte variabilité (écart-type 3,5h, 2h à 16h réel). Likely flip autoQuote->false." }
   },
+  "_moversNote": "movers is now derived from size (the client no longer picks it). Bruno: adjust per size as real crews dictate. 4½=3 keeps the doc §8 example at 1241.73.",
+
+  "services": {
+    "residentiel":         { "label": "Déménagement Résidentiel", "autoQuote": true },
+    "commercial":          { "label": "Déménagement Commercial",  "autoQuote": false },
+    "livraison":           { "label": "Livraison",                "autoQuote": false },
+    "transportCommercial": { "label": "Transport Commercial",     "autoQuote": false },
+    "sousTraitance":       { "label": "Sous-Traitance",           "autoQuote": false }
+  },
+  "_servicesNote": "Only 'residentiel' is auto-priced (the pricing doc is residential). Others -> custom_quote (reason 'service'). label must match the Monday Service column label exactly.",
 
   "travel": {
     "localThresholdKm": 40,
