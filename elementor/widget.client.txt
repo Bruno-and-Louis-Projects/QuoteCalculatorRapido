@@ -229,9 +229,16 @@
             return;
           }
           if (data.type === "custom_quote") {
+            var REASONS = {
+              service: "Ce service n'est pas tarifé automatiquement en ligne — un conseiller vous prépare une soumission sur mesure.",
+              distance: "La distance dépasse notre zone de tarification automatique (plus de 700 km).",
+              size: "Ce type de logement demande une évaluation personnalisée.",
+              special: "Un élément particulier (piano, coffre-fort, objet d'art, accès difficile, entreposage…) demande une évaluation."
+            };
+            var why = REASONS[data.reason] || data.message || "Ce déménagement nécessite une soumission personnalisée.";
             show(
-              "<div class='rq-price'>Sur mesure</div>" +
-              "<p>" + (data.message || "Ce déménagement nécessite une soumission personnalisée.") + "</p>" +
+              "<div class='rq-price'>Soumission sur mesure</div>" +
+              "<p>" + why + "</p>" +
               "<a class='rq-cta' href='" + CONTACT_URL + "'>Demander une soumission personnalisée</a>",
               "is-custom"
             );
