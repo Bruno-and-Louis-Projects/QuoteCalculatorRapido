@@ -48,6 +48,34 @@ only Bruno/LC can provide — fill them in, then deploy:
 6. Paste `widget.html` into an Elementor HTML widget (or WPCode if a security
    plugin strips inline `<script>` — see SPEC §6), and send one real test lead.
 
+## Getting the Monday IDs
+
+The board ID is in the board URL (`…/boards/18419200008`) and is already set in
+`wrangler.toml`. The **group ID** and **column IDs** aren't in the URL — pull
+them with this query (no token needed: open
+<https://monday.com/developers/v2/try-it-yourself> while logged into Monday,
+paste, and run):
+
+```graphql
+query {
+  boards(ids: 18419200008) {
+    name
+    groups { id title }
+    columns { id title type }
+  }
+}
+```
+
+Then map the returned `columns[].id` values into the `MONDAY_COL_*` vars in
+`wrangler.toml` (match by `title`), and optionally set `MONDAY_GROUP_ID` to the
+group you want leads to land in. Watch the `type` field — `phone`, `email`,
+`date`, and `status` columns use structured values (handled in
+`buildColumnValues()`); plain `text`/`numbers` columns just take a string.
+
+Until a column is mapped, the Worker simply skips it — leads still get created
+with the customer name as the item title, so nothing breaks while you fill these
+in incrementally.
+
 ## Notes
 
 - **Pricing is server-side only** — Bruno's formula never ships to the browser.

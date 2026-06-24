@@ -77,7 +77,7 @@ export default {
 
     // Don't let a Monday outage block the customer's quote: fire it but still
     // return the price. ctx.waitUntil keeps the request alive for the call.
-    if (env.MONDAY_TOKEN && env.MONDAY_BOARD_ID) {
+    if (isConfigured(env.MONDAY_TOKEN) && isConfigured(env.MONDAY_BOARD_ID)) {
       ctx.waitUntil(
         createMondayLead({ contact, input: quoteInput, result, env }).catch((err) => {
           console.error("Monday lead creation failed:", err?.message || err);
@@ -114,7 +114,7 @@ async function createMondayLead({ contact, input, result, env }) {
 
   const variables = {
     boardId: String(env.MONDAY_BOARD_ID),
-    groupId: env.MONDAY_GROUP_ID || null,
+    groupId: isConfigured(env.MONDAY_GROUP_ID) ? env.MONDAY_GROUP_ID : null,
     itemName,
     columnValues: JSON.stringify(columnValues),
   };
@@ -140,7 +140,11 @@ async function createMondayLead({ contact, input, result, env }) {
 // column ID on Bruno's board; if a var is unset, that field is simply skipped.
 function buildColumnValues({ contact, input, result, env }) {
   const cv = {};
-  const set = (colId, value) => { if (colId && value !== undefined && value !== null && value !== "") cv[colId] = value; };
+  // Resolve a column ID only if it's really set — empty or a leftover
+  // "<PLACEHOLDER>" means "not mapped yet", so we skip it rather than send a
+  // bogus column ID (which Monday would reject for the whole item).
+  const colId = (v) => (isConfigured(v) ? v : null);
+  const set = (id, value) => { const c = colId(id); if (c && value !== undefined && value !== null && value !== "") cv[c] = value; };
 
   // text columns take a plain string
   set(env.MONDAY_COL_SIZE, sizeLabel(input.size));
@@ -148,15 +152,15 @@ function buildColumnValues({ contact, input, result, env }) {
   set(env.MONDAY_COL_DISTANCE, String(input.distanceKm));  // text or numbers col
 
   // phone column: { phone, countryShortName }
-  if (env.MONDAY_COL_PHONE && contact.phone) {
+  if (colId(env.MONDAY_COL_PHONE) && contact.phone) {
     cv[env.MONDAY_COL_PHONE] = { phone: contact.phone, countryShortName: "CA" };
   }
   // email column: { email, text }
-  if (env.MONDAY_COL_EMAIL && contact.email) {
+  if (colId(env.MONDAY_COL_EMAIL) && contact.email) {
     cv[env.MONDAY_COL_EMAIL] = { email: contact.email, text: contact.email };
   }
   // date column: { date: "YYYY-MM-DD" }
-  if (env.MONDAY_COL_DATE && input.date) {
+  if (colId(env.MONDAY_COL_DATE) && input.date) {
     cv[env.MONDAY_COL_DATE] = { date: input.date };
   }
   // total: numbers column wants a string; if it's a text column this still works
@@ -164,7 +168,7 @@ function buildColumnValues({ contact, input, result, env }) {
 
   // Status/type so Bruno can tell instant quotes from custom-quote requests.
   // If MONDAY_COL_TYPE is a status column use { label: "..." }; if text, a string.
-  if (env.MONDAY_COL_TYPE) {
+  if (colId(env.MONDAY_COL_TYPE)) {
     cv[env.MONDAY_COL_TYPE] = { label: result.type === "instant_quote" ? "Soumission auto" : "Soumission perso" };
   }
 
@@ -209,6 +213,13 @@ function json(obj, status, cors) {
     status,
     headers: { "Content-Type": "application/json; charset=utf-8", ...cors },
   });
+}
+
+// A var is "configured" only if it's a non-empty string that isn't a leftover
+// "<PLACEHOLDER>". Lets us ship wrangler.toml with placeholders and have the
+// Worker simply skip whatever isn't filled in yet.
+function isConfigured(v) {
+  return typeof v === "string" && v.trim() !== "" && !v.trim().startsWith("<");
 }
 
 function toNumber(v) {

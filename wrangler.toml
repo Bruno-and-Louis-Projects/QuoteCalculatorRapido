@@ -25,8 +25,11 @@ RATE_LIMIT_WINDOW_MS = "60000"
 RATE_LIMIT_MAX = "8"
 
 # --- Monday.com board (from Bruno) ---
-MONDAY_BOARD_ID = "<BOARD_ID>"
-MONDAY_GROUP_ID = "<GROUP_ID>"
+# Board "Nouveau Lead": https://grouperapido.monday.com/boards/18419200008
+MONDAY_BOARD_ID = "18419200008"
+# Leave empty to drop leads into the board's top group. Set a group ID to target
+# a specific group (run the query in README "Getting the Monday IDs" to find it).
+MONDAY_GROUP_ID = ""
 
 # --- Monday.com column IDs (from Bruno) ---
 # Each is the column's ID on the target board. Leave blank to skip that field.
