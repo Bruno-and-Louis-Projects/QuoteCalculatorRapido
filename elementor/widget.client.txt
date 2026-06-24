@@ -1,0 +1,257 @@
+/*
+  Rapido — Calculateur de soumission (script client, servi par le Worker)
+  =======================================================================
+  Ce fichier EST le widget. Il est servi par le Worker à GET /widget.js et
+  chargé par la page via le petit extrait `embed.html` (collé une seule fois).
+  Toute modification fusionnée dans `main` est déployée automatiquement — plus
+  besoin de recoller quoi que ce soit dans Elementor.
+
+  Le script s'auto-injecte : il crée le style + le formulaire dans l'élément
+  #rapido-quote-mount (ou, à défaut, juste après la balise <script>), puis gère
+  l'envoi vers le Worker. Le nombre de déménageurs n'est pas demandé : il est
+  calculé selon le logement, côté Worker.
+*/
+(function () {
+  "use strict";
+
+  // The Worker serves this file, so derive the API base from our own <script src>.
+  var SCRIPT = document.currentScript;
+  var BASE = (SCRIPT && SCRIPT.src ? SCRIPT.src : "").replace(/\/widget\.js(?:\?.*)?$/, "");
+  var WORKER_URL = (BASE || "https://quotecalculatorrapido.louischarlesgendron.workers.dev") + "/quote";
+  var CONTACT_URL = "/contact"; // page de repli pour les soumissions personnalisées
+
+  var CSS = `
+  .rq { max-width: 720px; margin: 0 auto; font-family: inherit; color: inherit; }
+  .rq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .rq-field { display: flex; flex-direction: column; gap: 6px; font-size: 0.95rem; }
+  .rq-field--wide { grid-column: 1 / -1; }
+  .rq-field input, .rq-field select {
+    padding: 10px 12px; border: 1px solid #c9c9c9; border-radius: 8px; font-size: 1rem; background: #fff;
+  }
+  .rq-flags { margin: 20px 0; border: 1px solid #e3e3e3; border-radius: 8px; padding: 12px 16px; }
+  .rq-flags legend { padding: 0 6px; font-size: 0.9rem; color: #555; }
+  .rq-flags label { display: inline-flex; align-items: center; gap: 6px; margin: 6px 16px 6px 0; font-size: 0.95rem; }
+  .rq-hp { position: absolute; left: -9999px; height: 0; overflow: hidden; }
+  .rq-submit {
+    width: 100%; padding: 14px; border: 0; border-radius: 8px; cursor: pointer;
+    font-size: 1.05rem; font-weight: 600; background: #02874E; color: #fff;
+  }
+  .rq-submit:hover { background: #026b3e; }
+  .rq-submit:disabled { opacity: .6; cursor: progress; }
+  .rq-result { margin-top: 24px; padding: 20px; border-radius: 10px; }
+  .rq-result.is-quote { background: #f1faf2; border: 1px solid #b9e2bf; }
+  .rq-result.is-custom { background: #fff7e8; border: 1px solid #f0d9a8; }
+  .rq-result.is-error { background: #fdecec; border: 1px solid #f3b6b6; }
+  .rq-price { font-size: 2rem; font-weight: 700; margin: 6px 0; }
+  .rq-note { font-size: 0.9rem; color: #555; }
+  .rq-cta { display: inline-block; margin-top: 12px; padding: 12px 18px; background: #02874E; color: #fff;
+            text-decoration: none; border-radius: 8px; font-weight: 600; }
+  .rq-cta:hover { background: #026b3e; }
+  .rq-errors { margin: 8px 0 0; padding-left: 18px; }
+  @media (max-width: 560px) { .rq-grid { grid-template-columns: 1fr; } }
+  `;
+
+  var HTML = `
+  <form id="rq-form" novalidate>
+    <div class="rq-grid">
+      <label class="rq-field rq-field--wide">
+        <span>Service</span>
+        <select name="service" required>
+          <option value="residentiel" selected>Déménagement résidentiel</option>
+          <option value="commercial">Déménagement commercial</option>
+          <option value="livraison">Livraison</option>
+          <option value="transportCommercial">Transport commercial</option>
+          <option value="sousTraitance">Sous-traitance</option>
+        </select>
+      </label>
+
+      <label class="rq-field">
+        <span>Type de logement</span>
+        <select name="size" required>
+          <option value="" disabled selected>Choisir…</option>
+          <option value="2.5">2½ (studio / 1 chambre)</option>
+          <option value="3.5">3½</option>
+          <option value="4.5">4½</option>
+          <option value="5.5">5½</option>
+          <option value="6.5">6½ et plus</option>
+          <option value="maison">Maison (unifamiliale)</option>
+        </select>
+      </label>
+
+      <label class="rq-field">
+        <span>Date du déménagement</span>
+        <input type="date" name="date" required />
+      </label>
+
+      <label class="rq-field rq-field--wide">
+        <span>Adresse de départ</span>
+        <input type="text" name="originAddress" autocomplete="off" placeholder="Numéro, rue, ville" required />
+      </label>
+
+      <label class="rq-field rq-field--wide">
+        <span>Adresse de destination</span>
+        <input type="text" name="destAddress" autocomplete="off" placeholder="Numéro, rue, ville" required />
+      </label>
+
+      <label class="rq-field">
+        <span>Distance (km)</span>
+        <input type="number" name="distanceKm" min="0" step="1" inputmode="numeric" placeholder="ex. 35" required />
+      </label>
+
+      <label class="rq-field">
+        <span>Nom complet</span>
+        <input type="text" name="name" autocomplete="name" placeholder="Prénom Nom" required />
+      </label>
+
+      <label class="rq-field">
+        <span>Téléphone</span>
+        <input type="tel" name="phone" autocomplete="tel" placeholder="514 555-1234" required />
+      </label>
+
+      <label class="rq-field">
+        <span>Courriel</span>
+        <input type="email" name="email" autocomplete="email" placeholder="vous@exemple.com" required />
+      </label>
+
+      <label class="rq-field">
+        <span>Comment nous avez-vous connus&nbsp;?</span>
+        <select name="provenance" required>
+          <option value="" disabled selected>Choisir…</option>
+          <option value="Référence">Référence</option>
+          <option value="Repeat">Client de retour</option>
+          <option value="Facebook">Facebook</option>
+          <option value="Instagram">Instagram</option>
+          <option value="LinkedIn">LinkedIn</option>
+          <option value="Tiktok">TikTok</option>
+          <option value="ADS">Publicité (ADS)</option>
+          <option value="Affiche publicitaire">Affiche publicitaire</option>
+          <option value="SEO">Recherche Google (SEO)</option>
+          <option value="Appel d'offre">Appel d'offre</option>
+          <option value="MOVINGWALDO">MovingWaldo</option>
+        </select>
+      </label>
+    </div>
+
+    <fieldset class="rq-flags">
+      <legend>Éléments particuliers (le cas échéant)</legend>
+      <label><input type="checkbox" name="flags" value="piano" /> Piano</label>
+      <label><input type="checkbox" name="flags" value="coffreFort" /> Coffre-fort</label>
+      <label><input type="checkbox" name="flags" value="objetArt" /> Objet d'art</label>
+      <label><input type="checkbox" name="flags" value="accesDifficile" /> Accès difficile</label>
+      <label><input type="checkbox" name="flags" value="entreposage" /> Entreposage</label>
+      <label><input type="checkbox" name="flags" value="adressesMultiples" /> Adresses multiples</label>
+    </fieldset>
+
+    <div class="rq-hp" aria-hidden="true">
+      <label>Ne pas remplir <input type="text" name="company" tabindex="-1" autocomplete="off" /></label>
+    </div>
+
+    <button type="submit" class="rq-submit">Obtenir ma soumission</button>
+  </form>
+
+  <div id="rq-result" class="rq-result" hidden></div>
+  `;
+
+  function ready(fn) {
+    if (document.readyState !== "loading") fn();
+    else document.addEventListener("DOMContentLoaded", fn);
+  }
+
+  function money(n) {
+    try {
+      return new Intl.NumberFormat("fr-CA", { style: "currency", currency: "CAD" }).format(n);
+    } catch (e) { return n + " $"; }
+  }
+
+  ready(function () {
+    // Mount point: the div from embed.html, or a fresh div next to this script.
+    var mount = document.getElementById("rapido-quote-mount");
+    if (!mount) {
+      mount = document.createElement("div");
+      (SCRIPT && SCRIPT.parentNode ? SCRIPT.parentNode : document.body).appendChild(mount);
+    }
+    if (mount.getAttribute("data-rq-ready") === "1") return; // avoid double-init
+    mount.setAttribute("data-rq-ready", "1");
+    mount.classList.add("rq");
+
+    if (!document.getElementById("rq-style")) {
+      var st = document.createElement("style");
+      st.id = "rq-style";
+      st.textContent = CSS;
+      document.head.appendChild(st);
+    }
+    mount.innerHTML = HTML;
+
+    var form = mount.querySelector("#rq-form");
+    var resultEl = mount.querySelector("#rq-result");
+
+    function show(html, cls) {
+      resultEl.className = "rq-result " + cls;
+      resultEl.innerHTML = html;
+      resultEl.hidden = false;
+      resultEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var btn = form.querySelector(".rq-submit");
+
+      var fd = new FormData(form);
+      var payload = {
+        size: fd.get("size"),
+        service: fd.get("service"),
+        distanceKm: Number(fd.get("distanceKm")),
+        date: fd.get("date"),
+        flags: fd.getAll("flags"),
+        name: fd.get("name"),
+        phone: fd.get("phone"),
+        email: fd.get("email"),
+        originAddress: fd.get("originAddress"),
+        destAddress: fd.get("destAddress"),
+        provenance: fd.get("provenance"),
+        company: fd.get("company") || "" // honeypot
+      };
+
+      btn.disabled = true;
+      btn.textContent = "Calcul en cours…";
+
+      fetch(WORKER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.ok) {
+            var items = (data.errors || ["Une erreur est survenue."])
+              .map(function (msg) { return "<li>" + msg + "</li>"; }).join("");
+            show("<strong>Veuillez vérifier le formulaire :</strong><ul class='rq-errors'>" + items + "</ul>", "is-error");
+            return;
+          }
+          if (data.type === "custom_quote") {
+            show(
+              "<div class='rq-price'>Sur mesure</div>" +
+              "<p>" + (data.message || "Ce déménagement nécessite une soumission personnalisée.") + "</p>" +
+              "<a class='rq-cta' href='" + CONTACT_URL + "'>Demander une soumission personnalisée</a>",
+              "is-custom"
+            );
+            return;
+          }
+          show(
+            "<div class='rq-note'>Estimation (taxes incluses)</div>" +
+            "<div class='rq-price'>" + money(data.total) + "</div>" +
+            "<p class='rq-note'>Estimation basée sur " + data.breakdown.movers + " déménageurs et " +
+            data.breakdown.totalHours + " h de travail. Un conseiller vous contactera pour confirmer.</p>",
+            "is-quote"
+          );
+        })
+        .catch(function () {
+          show("<strong>Connexion impossible.</strong> Veuillez réessayer dans un instant ou nous joindre directement.", "is-error");
+        })
+        .finally(function () {
+          btn.disabled = false;
+          btn.textContent = "Obtenir ma soumission";
+        });
+    });
+  });
+})();

@@ -13,11 +13,27 @@
 
 import { computeQuote } from "../pricing.js";
 import pricingConfig from "../pricing.config.json"; // bundler inlines this JSON
+import widgetClient from "../elementor/widget.client.txt"; // served at GET /widget.js
 
 export default {
   async fetch(request, env, ctx) {
     const origin = request.headers.get("Origin") || "";
     const cors = corsHeaders(origin, env);
+    const url = new URL(request.url);
+
+    // --- Serve the front-end widget script (loaded by elementor/embed.html) ---
+    // Public, cacheable for 5 min so merges propagate quickly. This is what makes
+    // the WordPress block auto-update: the page loads /widget.js, not a paste.
+    if (request.method === "GET" && url.pathname === "/widget.js") {
+      return new Response(widgetClient, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/javascript; charset=utf-8",
+          "Cache-Control": "public, max-age=300",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
 
     // --- CORS preflight ---
     if (request.method === "OPTIONS") {
@@ -25,7 +41,6 @@ export default {
     }
 
     // Only POST /quote is supported.
-    const url = new URL(request.url);
     if (request.method !== "POST" || url.pathname !== "/quote") {
       return json({ ok: false, errors: ["route inconnue"] }, 404, cors);
     }
