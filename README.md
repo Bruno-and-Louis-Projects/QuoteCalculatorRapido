@@ -15,8 +15,12 @@ pricing.js            ← deterministic computeQuote() (don't hand-edit numbers)
 src/worker.js         ← HTTP handler: CORS, parse, price, Monday lead, abuse guard
 wrangler.toml         ← Worker config + vars (fill the <PLACEHOLDER>s)
 test/pricing.test.js  ← asserts the three SPEC §8 totals + guardrails
-elementor/widget.html ← French UI to paste into an Elementor HTML widget
+elementor/widget.client.txt ← the front-end widget (form + style + logic), served by the Worker at /widget.js
+elementor/embed.html        ← tiny snippet pasted ONCE into Elementor (loads /widget.js)
 ```
+
+The page loads the widget from the Worker, so editing `widget.client.txt` and
+merging to `main` updates the live form automatically — no re-pasting.
 
 ## Develop & test
 
@@ -38,12 +42,12 @@ The domain, the Monday board, and the column mapping are all wired in
    encrypted secret in the Cloudflare dashboard
    (Workers & Pages → `quotecalculatorrapido` → Settings → Variables and
    Secrets → Encrypt), or via CLI: `npx wrangler secret put MONDAY_TOKEN`.
-2. **`elementor/widget.html` → `WORKER_URL`** — the deployed Worker URL ending
-   in `/quote` (and `CONTACT_URL` for the custom-quote button).
-3. **Deploy** — merge to `main` (the connected Workers Build deploys), or run
+2. **Deploy** — merge to `main` (the connected Workers Build deploys), or run
    `npm run deploy` locally.
-4. Paste `widget.html` into an Elementor HTML widget (or WPCode if a security
-   plugin strips inline `<script>` — see SPEC §6), and send one real test lead.
+3. **Paste `elementor/embed.html` ONCE** into an Elementor HTML widget (or
+   WPCode if a security plugin strips inline `<script>` — see SPEC §6). It loads
+   the widget from the Worker, so you never paste again — future changes ship by
+   merging to `main`. Then send one real test lead.
 
 ## Monday lead mapping
 

@@ -12,6 +12,13 @@ name = "quotecalculatorrapido"
 main = "src/worker.js"
 compatibility_date = "2025-01-01"
 
+# Import the front-end widget (elementor/widget.client.txt) as a string so the
+# Worker can serve it at GET /widget.js. The .txt extension avoids colliding
+# with the default JS/ESM module rules.
+[[rules]]
+type = "Text"
+globs = ["**/*.txt"]
+
 # ---------------------------------------------------------------------------
 # Non-secret configuration (safe to commit). Replace every <PLACEHOLDER>.
 # ---------------------------------------------------------------------------
