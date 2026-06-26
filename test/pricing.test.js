@@ -1,10 +1,9 @@
-// pricing.test.js — asserts the three reference totals from SPEC §8.
-// Run before every deploy:  node --test
+// pricing.test.js — pins the pricing chain. Run before every deploy: node --test
 //
-// These three cases pin the whole pricing chain: hourly rate, work + travel
-// hours, the season multiplier, and the tax multiplier. If any of them drift,
-// either pricing.config.json changed on purpose (update the expected values
-// below) or pricing.js has a regression (fix the code).
+// NOTE: quotes are now shown WITHOUT taxes (taxes en sus), so the totals are the
+// pre-tax subtotals. The doc §8 examples were tax-included (1241.73 / 1427.99 /
+// 3104.33); their pre-tax equivalents are 1080 / 1242 / 2700 (= subtotal before
+// ×1.14975). Special items (piano/coffre-fort/objet d'art) add a flat $250 each.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -20,22 +19,22 @@ const quote = (input) => computeQuote(input, cfg);
 // Base move used across the doc examples: 4½ (auto-derives 3 movers), 35 km.
 const BASE = { size: "4.5", service: "residentiel", distanceKm: 35, flags: [] };
 
-test("§8 — March move (season ×1.00) → 1241.73", () => {
+test("§8 — March move (season ×1.00), pre-tax → 1080.00", () => {
   const r = quote({ ...BASE, date: "2026-03-15" });
   assert.equal(r.ok, true);
   assert.equal(r.type, "instant_quote");
   assert.equal(r.breakdown.movers, 3); // derived from size 4½
-  assert.equal(r.total, 1241.73);
+  assert.equal(r.total, 1080.0);
 });
 
-test("§8 — May move (season ×1.15) → 1427.99", () => {
+test("§8 — May move (season ×1.15), pre-tax → 1242.00", () => {
   const r = quote({ ...BASE, date: "2026-05-15" });
-  assert.equal(r.total, 1427.99);
+  assert.equal(r.total, 1242.0);
 });
 
-test("§8 — July 1st peak (season ×2.50) → 3104.33", () => {
+test("§8 — July 1st peak (season ×2.50), pre-tax → 2700.00", () => {
   const r = quote({ ...BASE, date: "2026-07-01" });
-  assert.equal(r.total, 3104.33);
+  assert.equal(r.total, 2700.0);
 });
 
 // --- A few guardrail cases beyond the doc, so the contract stays honest ---
@@ -46,10 +45,18 @@ test("exclusion: distance > 700 km → custom_quote (reason: distance)", () => {
   assert.equal(r.reason, "distance");
 });
 
-test("exclusion: special flag (piano) → custom_quote (reason: special)", () => {
+test("special fee: piano adds a flat $250 (still an instant quote)", () => {
   const r = quote({ ...BASE, date: "2026-03-15", flags: ["piano"] });
-  assert.equal(r.type, "custom_quote");
-  assert.equal(r.reason, "special");
+  assert.equal(r.type, "instant_quote");
+  assert.equal(r.breakdown.specialFee, 250);
+  assert.equal(r.total, 1330.0); // 1080 + 250
+});
+
+test("special fee: all three special items stack to $750", () => {
+  const r = quote({ ...BASE, date: "2026-03-15", flags: ["piano", "coffreFort", "objetArt"] });
+  assert.equal(r.type, "instant_quote");
+  assert.equal(r.breakdown.specialFee, 750);
+  assert.equal(r.total, 1830.0); // 1080 + 750
 });
 
 test("service: non-residential → custom_quote (reason: service)", () => {
@@ -58,11 +65,11 @@ test("service: non-residential → custom_quote (reason: service)", () => {
   assert.equal(r.reason, "service");
 });
 
-test("movers: derived per size (2½ → 2, maison → 4)", () => {
-  const studio = quote({ ...BASE, size: "2.5", date: "2026-03-15" });
-  const maison = quote({ ...BASE, size: "maison", date: "2026-03-15" });
-  assert.equal(studio.breakdown.movers, 2);
-  assert.equal(maison.breakdown.movers, 4);
+test("movers: 2½ → 2, every other size → 3", () => {
+  assert.equal(quote({ ...BASE, size: "2.5", date: "2026-03-15" }).breakdown.movers, 2);
+  assert.equal(quote({ ...BASE, size: "3.5", date: "2026-03-15" }).breakdown.movers, 3);
+  assert.equal(quote({ ...BASE, size: "6.5", date: "2026-03-15" }).breakdown.movers, 3);
+  assert.equal(quote({ ...BASE, size: "maison", date: "2026-03-15" }).breakdown.movers, 3);
 });
 
 test("validation: bad size → ok:false with 'type de logement invalide'", () => {

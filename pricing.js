@@ -46,17 +46,32 @@ export function computeQuote(input, cfg) {
   const hourlyRate = cfg.hourlyRate.base + cfg.hourlyRate.perMover * movers;
   const seasonMult = seasonMultiplier(input.date, cfg);
 
-  const subtotal = round2(hourlyRate * totalHours * seasonMult);
-  const total = round2(subtotal * cfg.taxMultiplier); // taxes incluses
+  const laborSubtotal = round2(hourlyRate * totalHours * seasonMult);
+  const specialFee = specialFeeFor(input.flags, cfg); // flat surcharge (piano/coffre-fort/objet d'art)
+  // Quote is shown WITHOUT taxes (taxes en sus). total = labour + flat fees, pre-tax.
+  const subtotal = round2(laborSubtotal + specialFee);
+  const total = subtotal;
 
   return {
     ok: true,
     type: "instant_quote",
     currency: cfg.currency,
     inputs: { size: input.size, service, movers, distanceKm: input.distanceKm, date: input.date },
-    breakdown: { hourlyRate, movers, workHours, travelHours, totalHours, seasonMult, subtotal, taxMultiplier: cfg.taxMultiplier },
-    total
+    breakdown: {
+      hourlyRate, movers, workHours, travelHours, totalHours, seasonMult,
+      laborSubtotal, specialFee, subtotal, taxMultiplier: cfg.taxMultiplier
+    },
+    total // pré-taxes
   };
+}
+
+// Flat surcharge added per checked special item (piano / coffre-fort / objet d'art).
+function specialFeeFor(flags, cfg) {
+  const sf = cfg.specialFee;
+  if (!sf || !sf.amount) return 0;
+  const set = sf.flags || [];
+  const count = (flags || []).filter((f) => set.includes(f)).length;
+  return sf.amount * count;
 }
 
 function travelHoursFor(distanceKm, cfg) {

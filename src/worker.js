@@ -229,8 +229,9 @@ function buildDetails({ lead, input, result }) {
     lines.push(`Heures estimées : ${b.totalHours} h (travail ${b.workHours} + déplacement ${b.travelHours})`);
     lines.push(`Tarif horaire : ${b.hourlyRate} $/h`);
     lines.push(`Majoration saison : ×${b.seasonMult}`);
-    lines.push(`Sous-total : ${b.subtotal} $`);
-    lines.push(`TOTAL (taxes incl.) : ${result.total} $`);
+    lines.push(`Main-d'œuvre : ${b.laborSubtotal} $`);
+    if (b.specialFee) lines.push(`Frais éléments particuliers : ${b.specialFee} $`);
+    lines.push(`TOTAL (taxes en sus) : ${result.total} $`);
   } else {
     lines.push("Soumission PERSONNALISÉE requise (calculateur web)");
     lines.push(`Raison : ${reasonLabel(result.reason)}`);

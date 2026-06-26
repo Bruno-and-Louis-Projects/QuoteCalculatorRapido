@@ -30,8 +30,11 @@ npm test           # runs the pricing tests — green = pricing chain intact
 npm run dev        # local Worker at http://localhost:8787
 ```
 
-`npm test` is wired into `npm run deploy`, so the three reference totals
-(`1241.73 / 1427.99 / 3104.33`) are re-checked before every deploy.
+`npm test` is wired into `npm run deploy`, so the reference totals are
+re-checked before every deploy. Quotes are shown **without taxes** (taxes en
+sus), so the totals are the pre-tax subtotals — the doc §8 tax-included
+examples (`1241.73 / 1427.99 / 3104.33`) correspond to `1080 / 1242 / 2700`
+pre-tax.
 
 ## Go-live checklist
 
@@ -73,7 +76,13 @@ column. Current mapping (`wrangler.toml` + `buildColumnValues()` in
 Notes on this mapping:
 
 - **Movers is derived from size** (`pricing.config.json` → `sizes[*].movers`),
-  not chosen by the client. 4½ = 3 keeps the doc §8 example at `1241.73`.
+  not chosen by the client. 2½ = 2 movers, every other size = 3.
+- **Special items** (piano / coffre-fort / objet d'art) add a flat **$250 each**
+  (`pricing.config.json` → `specialFee`) to the subtotal — still an instant
+  quote, not itemized in the widget. Other special situations (accès difficile,
+  entreposage, adresses multiples, commercial) still route to a custom quote.
+- **Quotes are pre-tax** (taxes en sus); `taxMultiplier` stays in config for
+  reference but isn't applied to the shown total.
 - **Only `residentiel` is auto-priced.** Commercial / Livraison / Transport /
   Sous-Traitance route to a `custom_quote` (reason `service`).
 - **Addresses use the text "(Extract)" columns.** The location-pin columns need
