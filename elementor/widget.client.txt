@@ -53,23 +53,40 @@
   }
   .rq-submit:hover { background: #026b3e; }
   .rq-submit:disabled { opacity: .6; cursor: progress; }
-  .rq-result { margin-top: 24px; padding: 20px; border-radius: 10px; }
-  .rq-result.is-quote { background: #f1faf2; border: 1px solid #b9e2bf; }
-  .rq-result.is-custom { background: #fff7e8; border: 1px solid #f0d9a8; }
-  .rq-result.is-error { background: #fdecec; border: 1px solid #f3b6b6; }
+  .rq-result { margin-top: 24px; }
   .rq-result.rq-animate { animation: rqSlideDown .45s ease both; }
   @keyframes rqSlideDown { from { opacity: 0; transform: translateY(-18px); } to { opacity: 1; transform: translateY(0); } }
+  .rq-card { padding: 22px 24px; border-radius: 12px; }
+  .rq-card.is-quote { background: #f1faf2; border: 1px solid #b9e2bf; }
+  .rq-card.is-custom { background: #fff7e8; border: 1px solid #f0d9a8; }
+  .rq-card.is-error { background: #fdecec; border: 1px solid #f3b6b6; }
   .rq-price { font-size: 2rem; font-weight: 700; margin: 6px 0; }
   .rq-note { font-size: 0.9rem; color: #555; }
   .rq-fineprint { font-size: 0.82rem; color: #777; margin: 10px 0 0; font-style: italic; }
   .rq-cta { display: inline-block; margin-top: 12px; padding: 12px 18px; background: #02874E; color: #fff;
             text-decoration: none; border-radius: 8px; font-weight: 600; }
   .rq-cta:hover { background: #026b3e; }
-  .rq-confirm { margin-top: 22px; padding-top: 18px; border-top: 1px dashed #b9e2bf; }
-  .rq-confirm h3 { margin: 0 0 8px; font-size: 1.3rem; }
-  .rq-confirm p { font-size: 0.92rem; color: #444; margin: 0 0 14px; }
+
+  /* Separate, prominent CTA card under the quote */
+  .rq-cta-card { margin-top: 18px; padding: 30px 24px; border-radius: 16px; text-align: center;
+                 background: linear-gradient(160deg, #064f31 0%, #02874E 100%); color: #fff;
+                 box-shadow: 0 12px 34px rgba(2, 135, 78, 0.28); }
+  .rq-cta-card h3 { margin: 0 0 10px; font-size: 1.55rem; line-height: 1.2; color: #fff; }
+  .rq-cta-card p { margin: 0 auto 22px; max-width: 540px; font-size: 0.95rem; line-height: 1.5; color: #e9f7ef; }
+  .rq-pay-wrap { display: inline-block; border-radius: 9999px; animation: rqGlow 2.4s ease-in-out infinite; }
+  @keyframes rqGlow {
+    0%, 100% { box-shadow: 0 0 16px 3px rgba(120, 240, 170, 0.45); }
+    50%      { box-shadow: 0 0 34px 10px rgba(120, 240, 170, 0.95); }
+  }
+  @media (prefers-reduced-motion: reduce) { .rq-pay-wrap { animation: none; box-shadow: 0 0 20px 4px rgba(120,240,170,0.6); } }
+
   .rq-errors { margin: 8px 0 0; padding-left: 18px; }
-  @media (max-width: 560px) { .rq-grid { grid-template-columns: 1fr; } .rq-price { font-size: 1.7rem; } }
+  @media (max-width: 560px) {
+    .rq-grid { grid-template-columns: 1fr; }
+    .rq-price { font-size: 1.7rem; }
+    .rq-cta-card { padding: 24px 16px; }
+    .rq-cta-card h3 { font-size: 1.35rem; }
+  }
   `;
 
   var HTML = `
@@ -203,14 +220,15 @@
     var form = mount.querySelector("#rq-form");
     var resultEl = mount.querySelector("#rq-result");
 
-    function show(html, cls) {
+    // html already carries its own card(s) (.rq-card / .rq-cta-card).
+    function show(html) {
       resultEl.innerHTML = html;
       resultEl.hidden = false;
       // Replay the slide-down animation every time (re-add the class after a reflow).
-      resultEl.className = "rq-result " + cls;
+      resultEl.className = "rq-result";
       void resultEl.offsetWidth; // force reflow so the animation restarts
       resultEl.classList.add("rq-animate");
-      // Bring the quote to the top of the viewport (mobile-friendly).
+      // Bring the result to the top of the viewport (mobile-friendly).
       setTimeout(function () {
         resultEl.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 60);
@@ -249,7 +267,8 @@
           if (!data.ok) {
             var items = (data.errors || ["Une erreur est survenue."])
               .map(function (msg) { return "<li>" + msg + "</li>"; }).join("");
-            show("<strong>Veuillez vérifier le formulaire :</strong><ul class='rq-errors'>" + items + "</ul>", "is-error");
+            show("<div class='rq-card is-error'><strong>Veuillez vérifier le formulaire :</strong>" +
+                 "<ul class='rq-errors'>" + items + "</ul></div>");
             return;
           }
           if (data.type === "custom_quote") {
@@ -261,33 +280,38 @@
             };
             var why = REASONS[data.reason] || data.message || "Ce déménagement nécessite une soumission personnalisée.";
             show(
-              "<div class='rq-price'>Soumission sur mesure</div>" +
-              "<p>" + why + "</p>" +
-              "<a class='rq-cta' href='" + CONTACT_URL + "'>Demander une soumission personnalisée</a>",
-              "is-custom"
+              "<div class='rq-card is-custom'>" +
+                "<div class='rq-price'>Soumission sur mesure</div>" +
+                "<p>" + why + "</p>" +
+                "<a class='rq-cta' href='" + CONTACT_URL + "'>Demander une soumission personnalisée</a>" +
+              "</div>"
             );
             return;
           }
           show(
-            "<div class='rq-note'>Estimation (taxes en sus)</div>" +
-            "<div class='rq-price'>" + money(data.total) + "</div>" +
-            "<p class='rq-note'>Estimation basée sur " + data.breakdown.movers + " déménageurs et " +
-            data.breakdown.totalHours + " h de travail.</p>" +
-            "<p class='rq-fineprint'>Veuillez noter que le montant est estimé et que le prix final de la " +
-            "facture sera ajusté en fonction du nombre d'heures requis pour effectuer le service.</p>" +
-            "<div class='rq-confirm'>" +
+            "<div class='rq-card is-quote'>" +
+              "<div class='rq-note'>Estimation (taxes en sus)</div>" +
+              "<div class='rq-price'>" + money(data.total) + "</div>" +
+              "<p class='rq-note'>Estimation basée sur " + data.breakdown.movers + " déménageurs et " +
+              data.breakdown.totalHours + " h de travail.</p>" +
+              "<p class='rq-fineprint'>Veuillez noter que le montant est estimé et que le prix final de la " +
+              "facture sera ajusté en fonction du nombre d'heures requis pour effectuer le service.</p>" +
+            "</div>" +
+            "<div class='rq-cta-card'>" +
               "<h3>Il ne vous reste plus qu'à confirmer&nbsp;!</h3>" +
               "<p>Un conseiller vous contactera pour confirmer dans les prochaines 24&nbsp;h. " +
               "Si vous désirez réserver dès maintenant, veuillez cliquer sur le bouton suivant afin de " +
               "réserver votre plage horaire.</p>" +
-              "<stripe-buy-button buy-button-id='" + STRIPE_BUY_BUTTON_ID + "' " +
-              "publishable-key='" + STRIPE_PUBLISHABLE_KEY + "'></stripe-buy-button>" +
-            "</div>",
-            "is-quote"
+              "<div class='rq-pay-wrap'>" +
+                "<stripe-buy-button buy-button-id='" + STRIPE_BUY_BUTTON_ID + "' " +
+                "publishable-key='" + STRIPE_PUBLISHABLE_KEY + "'></stripe-buy-button>" +
+              "</div>" +
+            "</div>"
           );
         })
         .catch(function () {
-          show("<strong>Connexion impossible.</strong> Veuillez réessayer dans un instant ou nous joindre directement.", "is-error");
+          show("<div class='rq-card is-error'><strong>Connexion impossible.</strong> " +
+               "Veuillez réessayer dans un instant ou nous joindre directement.</div>");
         })
         .finally(function () {
           btn.disabled = false;
