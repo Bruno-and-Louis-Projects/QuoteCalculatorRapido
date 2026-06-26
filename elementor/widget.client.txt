@@ -19,8 +19,21 @@
   var BASE = (SCRIPT && SCRIPT.src ? SCRIPT.src : "").replace(/\/widget\.js(?:\?.*)?$/, "");
   var WORKER_URL = (BASE || "https://quotecalculatorrapido.louischarlesgendron.workers.dev") + "/quote";
   var CONTACT_URL = "/contact"; // page de repli pour les soumissions personnalisées
-  // ⬇️ À REMPLACER : lien de paiement du dépôt (Stripe, page de réservation, etc.).
-  var DEPOSIT_URL = "/reservation";
+  // Bouton de paiement du dépôt (Stripe Buy Button). La clé publishable est
+  // publique par conception — sans danger côté navigateur.
+  var STRIPE_BUY_BUTTON_ID = "buy_btn_1TmawsCYOQSoDq0vsRkT8tsi";
+  var STRIPE_PUBLISHABLE_KEY = "pk_live_51KcbWeCYOQSoDq0vUv2xAm0dhYZFj80WkmroGuz0cHhfpbmmVJhxXJPnBeBxIXpo8cnZ0cFDIaGeGofiLiNtGPc000KOQBi6Gk";
+
+  // Charge le script Stripe une seule fois (les <script> injectés via innerHTML
+  // ne s'exécutent pas, d'où ce chargement programmatique).
+  function loadStripeBuyButton() {
+    if (document.getElementById("rq-stripe-sdk")) return;
+    var s = document.createElement("script");
+    s.id = "rq-stripe-sdk";
+    s.async = true;
+    s.src = "https://js.stripe.com/v3/buy-button.js";
+    document.head.appendChild(s);
+  }
 
   var CSS = `
   .rq { max-width: 720px; margin: 0 auto; font-family: inherit; color: inherit; }
@@ -55,10 +68,6 @@
   .rq-confirm { margin-top: 22px; padding-top: 18px; border-top: 1px dashed #b9e2bf; }
   .rq-confirm h3 { margin: 0 0 8px; font-size: 1.3rem; }
   .rq-confirm p { font-size: 0.92rem; color: #444; margin: 0 0 14px; }
-  .rq-pay { display: block; width: 100%; box-sizing: border-box; text-align: center;
-            padding: 16px 18px; background: #02874E; color: #fff; text-decoration: none;
-            border-radius: 8px; font-weight: 700; font-size: 1.05rem; }
-  .rq-pay:hover { background: #026b3e; }
   .rq-errors { margin: 8px 0 0; padding-left: 18px; }
   @media (max-width: 560px) { .rq-grid { grid-template-columns: 1fr; } .rq-price { font-size: 1.7rem; } }
   `;
@@ -188,6 +197,7 @@
       st.textContent = CSS;
       document.head.appendChild(st);
     }
+    loadStripeBuyButton(); // preload so the deposit button is ready when a quote shows
     mount.innerHTML = HTML;
 
     var form = mount.querySelector("#rq-form");
@@ -270,7 +280,8 @@
               "<p>Un conseiller vous contactera pour confirmer dans les prochaines 24&nbsp;h. " +
               "Si vous désirez réserver dès maintenant, veuillez cliquer sur le bouton suivant afin de " +
               "réserver votre plage horaire.</p>" +
-              "<a class='rq-pay' href='" + DEPOSIT_URL + "'>Payer votre dépôt pour confirmer votre plage horaire&nbsp;!</a>" +
+              "<stripe-buy-button buy-button-id='" + STRIPE_BUY_BUTTON_ID + "' " +
+              "publishable-key='" + STRIPE_PUBLISHABLE_KEY + "'></stripe-buy-button>" +
             "</div>",
             "is-quote"
           );
