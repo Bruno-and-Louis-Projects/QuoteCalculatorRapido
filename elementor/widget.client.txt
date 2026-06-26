@@ -19,6 +19,8 @@
   var BASE = (SCRIPT && SCRIPT.src ? SCRIPT.src : "").replace(/\/widget\.js(?:\?.*)?$/, "");
   var WORKER_URL = (BASE || "https://quotecalculatorrapido.louischarlesgendron.workers.dev") + "/quote";
   var CONTACT_URL = "/contact"; // page de repli pour les soumissions personnalisées
+  // ⬇️ À REMPLACER : lien de paiement du dépôt (Stripe, page de réservation, etc.).
+  var DEPOSIT_URL = "/reservation";
 
   var CSS = `
   .rq { max-width: 720px; margin: 0 auto; font-family: inherit; color: inherit; }
@@ -42,13 +44,23 @@
   .rq-result.is-quote { background: #f1faf2; border: 1px solid #b9e2bf; }
   .rq-result.is-custom { background: #fff7e8; border: 1px solid #f0d9a8; }
   .rq-result.is-error { background: #fdecec; border: 1px solid #f3b6b6; }
+  .rq-result.rq-animate { animation: rqSlideDown .45s ease both; }
+  @keyframes rqSlideDown { from { opacity: 0; transform: translateY(-18px); } to { opacity: 1; transform: translateY(0); } }
   .rq-price { font-size: 2rem; font-weight: 700; margin: 6px 0; }
   .rq-note { font-size: 0.9rem; color: #555; }
+  .rq-fineprint { font-size: 0.82rem; color: #777; margin: 10px 0 0; font-style: italic; }
   .rq-cta { display: inline-block; margin-top: 12px; padding: 12px 18px; background: #02874E; color: #fff;
             text-decoration: none; border-radius: 8px; font-weight: 600; }
   .rq-cta:hover { background: #026b3e; }
+  .rq-confirm { margin-top: 22px; padding-top: 18px; border-top: 1px dashed #b9e2bf; }
+  .rq-confirm h3 { margin: 0 0 8px; font-size: 1.3rem; }
+  .rq-confirm p { font-size: 0.92rem; color: #444; margin: 0 0 14px; }
+  .rq-pay { display: block; width: 100%; box-sizing: border-box; text-align: center;
+            padding: 16px 18px; background: #02874E; color: #fff; text-decoration: none;
+            border-radius: 8px; font-weight: 700; font-size: 1.05rem; }
+  .rq-pay:hover { background: #026b3e; }
   .rq-errors { margin: 8px 0 0; padding-left: 18px; }
-  @media (max-width: 560px) { .rq-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 560px) { .rq-grid { grid-template-columns: 1fr; } .rq-price { font-size: 1.7rem; } }
   `;
 
   var HTML = `
@@ -61,7 +73,6 @@
           <option value="commercial">Déménagement commercial</option>
           <option value="livraison">Livraison</option>
           <option value="transportCommercial">Transport commercial</option>
-          <option value="sousTraitance">Sous-traitance</option>
         </select>
       </label>
 
@@ -137,9 +148,6 @@
       <label><input type="checkbox" name="flags" value="piano" /> Piano</label>
       <label><input type="checkbox" name="flags" value="coffreFort" /> Coffre-fort</label>
       <label><input type="checkbox" name="flags" value="objetArt" /> Objet d'art</label>
-      <label><input type="checkbox" name="flags" value="accesDifficile" /> Accès difficile</label>
-      <label><input type="checkbox" name="flags" value="entreposage" /> Entreposage</label>
-      <label><input type="checkbox" name="flags" value="adressesMultiples" /> Adresses multiples</label>
     </fieldset>
 
     <div class="rq-hp" aria-hidden="true">
@@ -186,10 +194,16 @@
     var resultEl = mount.querySelector("#rq-result");
 
     function show(html, cls) {
-      resultEl.className = "rq-result " + cls;
       resultEl.innerHTML = html;
       resultEl.hidden = false;
-      resultEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      // Replay the slide-down animation every time (re-add the class after a reflow).
+      resultEl.className = "rq-result " + cls;
+      void resultEl.offsetWidth; // force reflow so the animation restarts
+      resultEl.classList.add("rq-animate");
+      // Bring the quote to the top of the viewport (mobile-friendly).
+      setTimeout(function () {
+        resultEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 60);
     }
 
     form.addEventListener("submit", function (e) {
@@ -245,10 +259,19 @@
             return;
           }
           show(
-            "<div class='rq-note'>Estimation (taxes incluses)</div>" +
+            "<div class='rq-note'>Estimation (taxes en sus)</div>" +
             "<div class='rq-price'>" + money(data.total) + "</div>" +
             "<p class='rq-note'>Estimation basée sur " + data.breakdown.movers + " déménageurs et " +
-            data.breakdown.totalHours + " h de travail. Un conseiller vous contactera pour confirmer.</p>",
+            data.breakdown.totalHours + " h de travail.</p>" +
+            "<p class='rq-fineprint'>Veuillez noter que le montant est estimé et que le prix final de la " +
+            "facture sera ajusté en fonction du nombre d'heures requis pour effectuer le service.</p>" +
+            "<div class='rq-confirm'>" +
+              "<h3>Il ne vous reste plus qu'à confirmer&nbsp;!</h3>" +
+              "<p>Un conseiller vous contactera pour confirmer dans les prochaines 24&nbsp;h. " +
+              "Si vous désirez réserver dès maintenant, veuillez cliquer sur le bouton suivant afin de " +
+              "réserver votre plage horaire.</p>" +
+              "<a class='rq-pay' href='" + DEPOSIT_URL + "'>Payer votre dépôt pour confirmer votre plage horaire&nbsp;!</a>" +
+            "</div>",
             "is-quote"
           );
         })

@@ -14,13 +14,19 @@
 
   "sizes": {
     "2.5":    { "label": "2½ (studio / 1 chambre)", "workHours": 2.5, "movers": 2, "autoQuote": true,  "_watch": "Faible échantillon (5 dossiers). Candidate to flip autoQuote->false after testing." },
-    "3.5":    { "label": "3½",                      "workHours": 4.0, "movers": 2, "autoQuote": true },
+    "3.5":    { "label": "3½",                      "workHours": 4.0, "movers": 3, "autoQuote": true },
     "4.5":    { "label": "4½",                      "workHours": 5.0, "movers": 3, "autoQuote": true },
     "5.5":    { "label": "5½",                      "workHours": 5.5, "movers": 3, "autoQuote": true },
-    "6.5":    { "label": "6½ et plus",              "workHours": 6.0, "movers": 4, "autoQuote": true,  "_watch": "Très faible échantillon (1 dossier). Candidate to flip autoQuote->false." },
-    "maison": { "label": "Maison (unifamiliale)",   "workHours": 5.5, "movers": 4, "autoQuote": true,  "_watch": "Forte variabilité (écart-type 3,5h, 2h à 16h réel). Likely flip autoQuote->false." }
+    "6.5":    { "label": "6½ et plus",              "workHours": 6.0, "movers": 3, "autoQuote": true,  "_watch": "Très faible échantillon (1 dossier). Candidate to flip autoQuote->false." },
+    "maison": { "label": "Maison (unifamiliale)",   "workHours": 5.5, "movers": 3, "autoQuote": true,  "_watch": "Forte variabilité (écart-type 3,5h, 2h à 16h réel). Likely flip autoQuote->false." }
   },
-  "_moversNote": "movers is now derived from size (the client no longer picks it). Bruno: adjust per size as real crews dictate. 4½=3 keeps the doc §8 example at 1241.73.",
+  "_moversNote": "movers is derived from size (the client no longer picks it). Per LC: 2½ = 2 movers, every other size = 3.",
+
+  "specialFee": {
+    "amount": 250,
+    "flags": ["piano", "coffreFort", "objetArt"],
+    "_note": "Flat fee added to the subtotal PER checked item among these flags (1->250, 2->500, 3->750). Not itemized in the customer-facing widget; recorded in the Monday lead. These flags no longer route to a custom quote."
+  },
 
   "services": {
     "residentiel":         { "label": "Déménagement Résidentiel", "autoQuote": true },
@@ -29,7 +35,7 @@
     "transportCommercial": { "label": "Transport Commercial",     "autoQuote": false },
     "sousTraitance":       { "label": "Sous-Traitance",           "autoQuote": false }
   },
-  "_servicesNote": "Only 'residentiel' is auto-priced (the pricing doc is residential). Others -> custom_quote (reason 'service'). label must match the Monday Service column label exactly.",
+  "_servicesNote": "Only 'residentiel' is auto-priced (the pricing doc is residential). Others -> custom_quote (reason 'service'). label must match the Monday Service column label exactly. (Sous-Traitance kept here for back-compat; removed from the form.)",
 
   "travel": {
     "localThresholdKm": 40,
@@ -61,7 +67,7 @@
 
   "exclusions": {
     "maxDistanceKm": 700,
-    "specialFlags": ["piano", "coffreFort", "objetArt", "accesDifficile", "entreposage", "adressesMultiples", "commercial"],
-    "_note": "Any match -> response type 'custom_quote' (no final price). Size-level exclusion is driven by sizes[*].autoQuote, not here."
+    "specialFlags": ["accesDifficile", "entreposage", "adressesMultiples", "commercial"],
+    "_note": "Any match -> response type 'custom_quote' (no final price). piano/coffreFort/objetArt moved to specialFee (flat surcharge, still instant). Size-level exclusion is driven by sizes[*].autoQuote, not here."
   }
 }
