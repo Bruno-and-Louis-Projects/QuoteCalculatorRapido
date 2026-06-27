@@ -91,6 +91,7 @@ export default {
       originAddress: clean(body?.originAddress),
       destAddress: clean(body?.destAddress),
       provenance: clean(body?.provenance),
+      notes: clean(body?.notes),
       // Exact Monday status label for the chosen service.
       serviceLabel: pricingConfig.services?.[quoteInput.service]?.label || "",
     };
@@ -243,6 +244,10 @@ function buildDetails({ lead, input, result }) {
   lines.push(`Adresse de départ : ${lead.originAddress || "—"}`);
   lines.push(`Adresse de destination : ${lead.destAddress || "—"}`);
   lines.push(`Éléments particuliers : ${flags}`);
+  if (lead.notes) {
+    lines.push("");
+    lines.push(`Notes du client : ${lead.notes}`);
+  }
   return lines.join("\n");
 }
 
