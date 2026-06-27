@@ -40,9 +40,12 @@
   .rq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .rq-field { display: flex; flex-direction: column; gap: 6px; font-size: 0.95rem; }
   .rq-field--wide { grid-column: 1 / -1; }
-  .rq-field input, .rq-field select {
+  .rq-field input, .rq-field select, .rq-field textarea {
     padding: 10px 12px; border: 1px solid #c9c9c9; border-radius: 8px; font-size: 1rem; background: #fff;
+    font-family: inherit;
   }
+  .rq-notes { margin-top: 4px; }
+  .rq-notes textarea { resize: vertical; min-height: 70px; }
   .rq-flags { margin: 20px 0; border: 1px solid #e3e3e3; border-radius: 8px; padding: 12px 16px; }
   .rq-flags legend { padding: 0 6px; font-size: 0.9rem; color: #555; }
   .rq-flags label { display: inline-flex; align-items: center; gap: 6px; margin: 6px 16px 6px 0; font-size: 0.95rem; }
@@ -176,6 +179,11 @@
       <label><input type="checkbox" name="flags" value="objetArt" /> Objet d'art</label>
     </fieldset>
 
+    <label class="rq-field rq-notes">
+      <span>Notes</span>
+      <textarea name="notes" rows="3" placeholder="Veuillez noter toutes informations utiles dont nous devrions prendre connaissance avant le début du déménagement."></textarea>
+    </label>
+
     <div class="rq-hp" aria-hidden="true">
       <label>Ne pas remplir <input type="text" name="company" tabindex="-1" autocomplete="off" /></label>
     </div>
@@ -251,6 +259,7 @@
         originAddress: fd.get("originAddress"),
         destAddress: fd.get("destAddress"),
         provenance: fd.get("provenance"),
+        notes: fd.get("notes"),
         company: fd.get("company") || "" // honeypot
       };
 
