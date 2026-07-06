@@ -53,8 +53,10 @@ MONDAY_COL_CONTACT_DATE = "date_mm2mjfdg"      # Date contact (date) = submissio
 MONDAY_COL_DETAILS      = "long_text_mm2m85we" # Détails / Projet (long_text) = full quote
 # The two address columns are Monday Location (map-pin) type, so the Worker
 # geocodes each free-text address to lat/lng before writing (see geocode() in
-# src/worker.js). No key needed by default (OpenStreetMap Nominatim); set the
-# optional GOOGLE_MAPS_API_KEY secret for higher-accuracy Google geocoding.
+# src/worker.js). Works keyless by default (Nominatim, with a Photon fallback so
+# a throttled lookup still resolves). For guaranteed reliability at volume, set
+# the optional GOOGLE_MAPS_API_KEY secret — it's tried first, with no shared-IP
+# rate limits, and the keyless providers stay as backup.
 
 # ---------------------------------------------------------------------------
 # Secrets (do NOT put in this file). Set them once with:
