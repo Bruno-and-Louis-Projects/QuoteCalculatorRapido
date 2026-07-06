@@ -119,7 +119,14 @@ export default {
 // column is a different type, adjust the matching line in buildColumnValues().
 // ---------------------------------------------------------------------------
 async function createMondayLead({ lead, input, result, env }) {
-  const columnValues = buildColumnValues({ lead, input, result, env });
+  // Monday's "Adresse de Départ / Destination" columns are Location type, which
+  // need lat/lng — so geocode the free-text addresses first. Both run in
+  // parallel; a failure just yields null and the column is skipped.
+  const [originGeo, destGeo] = await Promise.all([
+    geocode(lead.originAddress, env),
+    geocode(lead.destAddress, env),
+  ]);
+  const columnValues = buildColumnValues({ lead, input, result, env, originGeo, destGeo });
 
   const itemName = lead.name || lead.email || lead.phone || "Soumission web";
 
@@ -163,11 +170,11 @@ async function createMondayLead({ lead, input, result, env }) {
 
 // Maps our lead fields onto the "New Leads Automatic Quote BETA" board columns.
 // The board has no dedicated size/movers/distance/total columns, so the full
-// quote breakdown goes into the "Détails / Projet" long-text column. Addresses
-// map to the text "(Extract)" columns (location-pin columns need geocoding).
-// Each MONDAY_COL_* var is a column ID; an unset (empty / "<PLACEHOLDER>") var
-// is simply skipped.
-function buildColumnValues({ lead, input, result, env }) {
+// quote breakdown goes into the "Détails / Projet" long-text column. The two
+// addresses map to the board's Location (map-pin) columns, filled from geocoded
+// coordinates (originGeo / destGeo). Each MONDAY_COL_* var is a column ID; an
+// unset (empty / "<PLACEHOLDER>") var is simply skipped.
+function buildColumnValues({ lead, input, result, env, originGeo, destGeo }) {
   const cv = {};
   const colId = (v) => (isConfigured(v) ? v : null);
 
@@ -183,12 +190,17 @@ function buildColumnValues({ lead, input, result, env }) {
   if (colId(env.MONDAY_COL_CLIENT_NAME) && lead.name) {
     cv[env.MONDAY_COL_CLIENT_NAME] = lead.name;
   }
-  // Adresses de départ / destination (text)
-  if (colId(env.MONDAY_COL_ORIGIN) && lead.originAddress) {
-    cv[env.MONDAY_COL_ORIGIN] = lead.originAddress;
+  // Adresses de départ / destination (location): { lat, lng, address }.
+  // Monday location columns require coordinates; the free-text address is only
+  // the display label. If geocoding failed we skip the column — the address
+  // still lands in "Détails / Projet" below, so it's never lost.
+  const originLoc = locationValue(lead.originAddress, originGeo);
+  if (colId(env.MONDAY_COL_ORIGIN) && originLoc) {
+    cv[env.MONDAY_COL_ORIGIN] = originLoc;
   }
-  if (colId(env.MONDAY_COL_DEST) && lead.destAddress) {
-    cv[env.MONDAY_COL_DEST] = lead.destAddress;
+  const destLoc = locationValue(lead.destAddress, destGeo);
+  if (colId(env.MONDAY_COL_DEST) && destLoc) {
+    cv[env.MONDAY_COL_DEST] = destLoc;
   }
   // Service (status): { label } — exact board label
   if (colId(env.MONDAY_COL_SERVICE) && lead.serviceLabel) {
@@ -249,6 +261,62 @@ function buildDetails({ lead, input, result }) {
     lines.push(`Notes du client : ${lead.notes}`);
   }
   return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Geocoding — turn a free-text address into { lat, lng } for Monday's Location
+// columns. Uses Google's Geocoding API when GOOGLE_MAPS_API_KEY is set (best
+// accuracy, recommended for production), otherwise falls back to OpenStreetMap's
+// keyless Nominatim so addresses populate out of the box. Best-effort: any error
+// returns null and the caller simply skips the location column.
+// ---------------------------------------------------------------------------
+async function geocode(address, env) {
+  if (!address) return null;
+  try {
+    if (isConfigured(env.GOOGLE_MAPS_API_KEY)) {
+      return await geocodeGoogle(address, env.GOOGLE_MAPS_API_KEY);
+    }
+    return await geocodeNominatim(address);
+  } catch (err) {
+    console.error("Geocoding failed:", err?.message || err);
+    return null;
+  }
+}
+
+async function geocodeGoogle(address, key) {
+  const url =
+    "https://maps.googleapis.com/maps/api/geocode/json?address=" +
+    encodeURIComponent(address) + "&region=ca&key=" + encodeURIComponent(key);
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const data = await res.json();
+  const loc = data?.results?.[0]?.geometry?.location;
+  if (!loc || typeof loc.lat !== "number" || typeof loc.lng !== "number") return null;
+  return { lat: String(loc.lat), lng: String(loc.lng) };
+}
+
+async function geocodeNominatim(address) {
+  const url =
+    "https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ca&q=" +
+    encodeURIComponent(address);
+  // Nominatim requires an identifying User-Agent; low-volume single lookups are
+  // within its usage policy. Swap to Google (set GOOGLE_MAPS_API_KEY) for volume.
+  const res = await fetch(url, {
+    headers: { "User-Agent": "GroupeRapidoQuoteBot/1.0 (https://servicerapido.com)" },
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (!Array.isArray(data) || !data.length) return null;
+  const { lat, lon } = data[0];
+  if (!lat || !lon) return null;
+  return { lat: String(lat), lng: String(lon) };
+}
+
+// Build a Monday Location column value. Needs coordinates; returns null (skip)
+// when the address is empty or geocoding didn't resolve.
+function locationValue(address, geo) {
+  if (!address || !geo || !geo.lat || !geo.lng) return null;
+  return { lat: geo.lat, lng: geo.lng, address };
 }
 
 // ---------------------------------------------------------------------------

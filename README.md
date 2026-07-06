@@ -66,8 +66,8 @@ column. Current mapping (`wrangler.toml` + `buildColumnValues()` in
 | Customer name | item title + Nom du client | `text_mm2m4rx1` |
 | Phone | Téléphone | `phone_mm2m8m7s` |
 | Email | Adresse Courriel | `email_mm2m1mmg` |
-| Origin address | Adresse de Départ (Extract) | `text_mm2m31jw` |
-| Destination address | Adresse de Destination (Extract) | `text_mm2mxbds` |
+| Origin address | Adresse de Départ (Location) | `location_mm2m9m5y` |
+| Destination address | Adresse de Destination (Location) | `location_mm2m5srv` |
 | Service type | Service (status) | `color_mm2msnf5` |
 | Provenance | Provenance (status) | `color_mm2m5yvt` |
 | Moving date | Date de service | `date_mm2mzac7` |
@@ -86,8 +86,12 @@ Notes on this mapping:
   reference but isn't applied to the shown total.
 - **Only `residentiel` is auto-priced.** Commercial / Livraison / Transport /
   Sous-Traitance route to a `custom_quote` (reason `service`).
-- **Addresses use the text "(Extract)" columns.** The location-pin columns need
-  lat/lng from a maps API (SPEC §6 "later") — a plain address can't set a pin.
+- **Addresses fill the Location (map-pin) columns.** Monday location columns
+  need lat/lng, so the Worker geocodes each free-text address before writing
+  (`geocode()` in `src/worker.js`). It uses OpenStreetMap Nominatim with no key
+  by default; set the optional `GOOGLE_MAPS_API_KEY` secret for higher-accuracy
+  Google geocoding. Geocoding is best-effort — if it can't resolve an address the
+  pin is skipped, but the full address still appears in **Détails / Projet**.
 - **Status columns** (Service, Provenance) are sent with `create_labels_if_missing`,
   so a label that isn't pre-defined is created rather than failing the item.
   The `Statut` column is left for Bruno's pipeline to set.
