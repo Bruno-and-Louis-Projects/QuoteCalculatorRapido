@@ -32,9 +32,10 @@ npm run dev        # local Worker at http://localhost:8787
 
 `npm test` is wired into `npm run deploy`, so the reference totals are
 re-checked before every deploy. Quotes are shown **without taxes** (taxes en
-sus), so the totals are the pre-tax subtotals — the doc §8 tax-included
-examples (`1241.73 / 1427.99 / 3104.33`) correspond to `1080 / 1242 / 2700`
-pre-tax.
+sus), so the totals are the pre-tax subtotals. Estimated work hours are trimmed
+by **1 h** for every size except **Maison** (`timeAdjustmentHours` in the
+config), so the 4½ base example is work `5−1=4` + travel `1` = `5 h` → subtotal
+`900` pre-tax (`1035` in May, `2250` on Jul 1).
 
 ## Go-live checklist
 

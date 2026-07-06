@@ -71,6 +71,7 @@ Frontend shows "À partir de…" + a **Demander une soumission personnalisée** 
 
 - `tarif_horaire = 90 + 30 × movers`  →  120 / 150 / 180 / 210 / 240
 - `heures_travail` by size: 2½=2.5, 3½=4, 4½=5, 5½=5.5, 6½+=6, Maison=5.5
+- `ajustement_heures`: −1 h off `heures_travail` for every size **except Maison** (a house keeps its full estimate). Never below 0. Config: `timeAdjustmentHours`.
 - `heures_deplacement`: ≤40 km → 1.0 h ; else round_nearest_0.5(distance / 90)
 - `majoration` = season table (peak around 1 juillet, ×2.50)
 - `sous_total = tarif_horaire × heures_totales × majoration`

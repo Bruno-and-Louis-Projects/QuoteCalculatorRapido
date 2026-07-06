@@ -22,6 +22,12 @@
   },
   "_moversNote": "movers is derived from size (the client no longer picks it). Per LC: 2½ = 2 movers, every other size = 3.",
 
+  "timeAdjustmentHours": {
+    "delta": -1,
+    "exemptSizes": ["maison"],
+    "_note": "Retire des heures de travail estimées pour affiner la soumission. Appliqué à toutes les tailles SAUF 'maison' (une maison garde son estimation complète). Se combine avant la majoration saison; le temps de travail ne descend jamais sous 0."
+  },
+
   "specialFee": {
     "amount": 250,
     "flags": ["piano", "coffreFort", "objetArt"],
