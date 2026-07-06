@@ -39,7 +39,7 @@ export function computeQuote(input, cfg) {
   }
 
   const movers = sizeDef.movers; // derived from size, not chosen by the client
-  const workHours = sizeDef.workHours;
+  const workHours = adjustWorkHours(sizeDef.workHours, input.size, cfg);
   const travelHours = travelHoursFor(input.distanceKm, cfg);
   const totalHours = workHours + travelHours;
 
@@ -63,6 +63,16 @@ export function computeQuote(input, cfg) {
     },
     total // pré-taxes
   };
+}
+
+// Estimate refinement: shave a fixed amount off the work hours for every size
+// except the exempt ones (a house move keeps its full estimate). Applied before
+// the season multiplier, like the rest of the labour, and never drops below 0.
+function adjustWorkHours(workHours, size, cfg) {
+  const adj = cfg.timeAdjustmentHours;
+  if (!adj || !adj.delta) return workHours;
+  if ((adj.exemptSizes || []).includes(size)) return workHours;
+  return Math.max(0, round2(workHours + adj.delta));
 }
 
 // Flat surcharge added per checked special item (piano / coffre-fort / objet d'art).
@@ -119,5 +129,6 @@ function roundNearest(value, step) { return Math.round(value / step) * step; }
 function round2(n) { return Math.round(n * 100) / 100; }
 function isValidDate(s) { const d = new Date(s); return !Number.isNaN(d.getTime()); }
 
-// --- sanity check (matches doc section 8): 4½, 3 movers, 35 km, March ---
-// hourly 180, hours 5+1=6, mult 1.00 -> subtotal 1080.00 -> total 1241.73
+// --- sanity check: 4½, 3 movers, 35 km, March ---
+// hourly 180, work 5-1=4 (−1 h refinement), travel 1 -> 5 h, mult 1.00 -> subtotal 900.00
+// (Maison is exempt from the −1 h: it keeps its full 5.5 h estimate.)

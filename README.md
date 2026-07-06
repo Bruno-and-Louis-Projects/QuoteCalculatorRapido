@@ -32,9 +32,10 @@ npm run dev        # local Worker at http://localhost:8787
 
 `npm test` is wired into `npm run deploy`, so the reference totals are
 re-checked before every deploy. Quotes are shown **without taxes** (taxes en
-sus), so the totals are the pre-tax subtotals — the doc §8 tax-included
-examples (`1241.73 / 1427.99 / 3104.33`) correspond to `1080 / 1242 / 2700`
-pre-tax.
+sus), so the totals are the pre-tax subtotals. Estimated work hours are trimmed
+by **1 h** for every size except **Maison** (`timeAdjustmentHours` in the
+config), so the 4½ base example is work `5−1=4` + travel `1` = `5 h` → subtotal
+`900` pre-tax (`1035` in May, `2250` on Jul 1).
 
 ## Go-live checklist
 
@@ -65,8 +66,8 @@ column. Current mapping (`wrangler.toml` + `buildColumnValues()` in
 | Customer name | item title + Nom du client | `text_mm2m4rx1` |
 | Phone | Téléphone | `phone_mm2m8m7s` |
 | Email | Adresse Courriel | `email_mm2m1mmg` |
-| Origin address | Adresse de Départ (Extract) | `text_mm2m31jw` |
-| Destination address | Adresse de Destination (Extract) | `text_mm2mxbds` |
+| Origin address | Adresse de Départ (Location) | `location_mm2m9m5y` |
+| Destination address | Adresse de Destination (Location) | `location_mm2m5srv` |
 | Service type | Service (status) | `color_mm2msnf5` |
 | Provenance | Provenance (status) | `color_mm2m5yvt` |
 | Moving date | Date de service | `date_mm2mzac7` |
@@ -85,8 +86,12 @@ Notes on this mapping:
   reference but isn't applied to the shown total.
 - **Only `residentiel` is auto-priced.** Commercial / Livraison / Transport /
   Sous-Traitance route to a `custom_quote` (reason `service`).
-- **Addresses use the text "(Extract)" columns.** The location-pin columns need
-  lat/lng from a maps API (SPEC §6 "later") — a plain address can't set a pin.
+- **Addresses fill the Location (map-pin) columns.** Monday location columns
+  need lat/lng, so the Worker geocodes each free-text address before writing
+  (`geocode()` in `src/worker.js`). It uses OpenStreetMap Nominatim with no key
+  by default; set the optional `GOOGLE_MAPS_API_KEY` secret for higher-accuracy
+  Google geocoding. Geocoding is best-effort — if it can't resolve an address the
+  pin is skipped, but the full address still appears in **Détails / Projet**.
 - **Status columns** (Service, Provenance) are sent with `create_labels_if_missing`,
   so a label that isn't pre-defined is created rather than failing the item.
   The `Statut` column is left for Bruno's pipeline to set.
