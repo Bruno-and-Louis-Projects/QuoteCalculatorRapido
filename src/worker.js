@@ -269,22 +269,35 @@ function buildDetails({ lead, input, result }) {
 
 // ---------------------------------------------------------------------------
 // Geocoding — turn a free-text address into { lat, lng } for Monday's Location
-// columns. Uses Google's Geocoding API when GOOGLE_MAPS_API_KEY is set (best
-// accuracy, recommended for production), otherwise falls back to OpenStreetMap's
-// keyless Nominatim so addresses populate out of the box. Best-effort: any error
-// returns null and the caller simply skips the location column.
+// columns (which require coordinates; an address alone can't set the cell).
+//
+// Reliability is the whole game here. The keyless public geocoders (Nominatim,
+// Photon) rate-limit HARD by IP, and a Cloudflare Worker shares its egress IP
+// with countless other tenants — so a lookup can be throttled at random. That's
+// exactly why the *second* address (destination) kept coming back empty. The fix
+// is to not depend on any single provider: we try them in order and, for the
+// throttle-prone ones, retry once before moving on. If a key is set we use the
+// keyed provider first (no shared-IP limits). Best-effort: if every provider
+// fails the caller skips the column and the address still lands in Détails.
 // ---------------------------------------------------------------------------
 async function geocode(address, env) {
   if (!address) return null;
-  try {
-    if (isConfigured(env.GOOGLE_MAPS_API_KEY)) {
-      return await geocodeGoogle(address, env.GOOGLE_MAPS_API_KEY);
-    }
-    return await geocodeNominatim(address);
-  } catch (err) {
-    console.error("Geocoding failed:", err?.message || err);
-    return null;
+  const providers = [];
+  if (isConfigured(env.GOOGLE_MAPS_API_KEY)) {
+    providers.push(() => geocodeGoogle(address, env.GOOGLE_MAPS_API_KEY));
   }
+  providers.push(() => geocodeNominatim(address));
+  providers.push(() => geocodePhoton(address));
+
+  for (const run of providers) {
+    try {
+      const geo = await run();
+      if (geo) return geo;
+    } catch (err) {
+      console.error("Geocoder error:", err?.message || err);
+    }
+  }
+  return null;
 }
 
 async function geocodeGoogle(address, key) {
@@ -299,21 +312,39 @@ async function geocodeGoogle(address, key) {
   return { lat: String(loc.lat), lng: String(loc.lng) };
 }
 
+// OpenStreetMap Nominatim. Requires an identifying User-Agent. Retries once on a
+// throttle/5xx (returns null on a genuine "no match" so we don't waste the retry).
 async function geocodeNominatim(address) {
   const url =
     "https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ca&q=" +
     encodeURIComponent(address);
-  // Nominatim requires an identifying User-Agent; low-volume single lookups are
-  // within its usage policy. Swap to Google (set GOOGLE_MAPS_API_KEY) for volume.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt) await sleep(1500); // back off before the retry
+    const res = await fetch(url, {
+      headers: { "User-Agent": "GroupeRapidoQuoteBot/1.0 (https://servicerapido.com)" },
+    });
+    if (res.status === 429 || res.status === 403 || res.status >= 500) continue; // throttled → retry
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!Array.isArray(data) || !data.length) return null;
+    const { lat, lon } = data[0];
+    return lat && lon ? { lat: String(lat), lng: String(lon) } : null;
+  }
+  return null; // exhausted retries → caller falls through to the next provider
+}
+
+// Komoot Photon (also OSM-based) — a second, independent free provider used as a
+// fallback when Nominatim throttles our shared IP. Coordinates are [lng, lat].
+async function geocodePhoton(address) {
+  const url = "https://photon.komoot.io/api/?limit=1&q=" + encodeURIComponent(address);
   const res = await fetch(url, {
     headers: { "User-Agent": "GroupeRapidoQuoteBot/1.0 (https://servicerapido.com)" },
   });
   if (!res.ok) return null;
   const data = await res.json();
-  if (!Array.isArray(data) || !data.length) return null;
-  const { lat, lon } = data[0];
-  if (!lat || !lon) return null;
-  return { lat: String(lat), lng: String(lon) };
+  const coords = data?.features?.[0]?.geometry?.coordinates;
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+  return { lat: String(coords[1]), lng: String(coords[0]) };
 }
 
 // Build a Monday Location column value. Needs coordinates; returns null (skip)

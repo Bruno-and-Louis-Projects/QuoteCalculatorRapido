@@ -88,10 +88,15 @@ Notes on this mapping:
   Sous-Traitance route to a `custom_quote` (reason `service`).
 - **Addresses fill the Location (map-pin) columns.** Monday location columns
   need lat/lng, so the Worker geocodes each free-text address before writing
-  (`geocode()` in `src/worker.js`). It uses OpenStreetMap Nominatim with no key
-  by default; set the optional `GOOGLE_MAPS_API_KEY` secret for higher-accuracy
-  Google geocoding. Geocoding is best-effort — if it can't resolve an address the
-  pin is skipped, but the full address still appears in **Détails / Projet**.
+  (`geocode()` in `src/worker.js`). The two lookups run **sequentially**, not in
+  parallel, and geocoding tries **multiple providers** in order — Google (if
+  `GOOGLE_MAPS_API_KEY` is set) → Nominatim (with a retry) → Photon. That
+  redundancy exists because the keyless public geocoders rate-limit by IP and a
+  Worker shares its egress IP, which was making the *second* (destination) lookup
+  come back empty; the fallback provider now covers a throttled request. Setting
+  `GOOGLE_MAPS_API_KEY` sidesteps the shared-IP limits entirely and is
+  recommended for volume. Still best-effort — if every provider fails the pin is
+  skipped, but the full address always appears in **Détails / Projet**.
 - **Status columns** (Service, Provenance) are sent with `create_labels_if_missing`,
   so a label that isn't pre-defined is created rather than failing the item.
   The `Statut` column is left for Bruno's pipeline to set.
