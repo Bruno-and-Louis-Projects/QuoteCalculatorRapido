@@ -120,12 +120,16 @@ export default {
 // ---------------------------------------------------------------------------
 async function createMondayLead({ lead, input, result, env }) {
   // Monday's "Adresse de Départ / Destination" columns are Location type, which
-  // need lat/lng — so geocode the free-text addresses first. Both run in
-  // parallel; a failure just yields null and the column is skipped.
-  const [originGeo, destGeo] = await Promise.all([
-    geocode(lead.originAddress, env),
-    geocode(lead.destAddress, env),
-  ]);
+  // need lat/lng — so geocode the free-text addresses first. Do it SEQUENTIALLY,
+  // not in parallel: the default provider (Nominatim) allows only ~1 request/sec,
+  // so two concurrent lookups get one throttled — that's why a second address
+  // could come back empty. Google has no such limit, so only pace the calls on
+  // the Nominatim fallback. This runs in ctx.waitUntil, so the wait never delays
+  // the customer's quote. A failure just yields null and the column is skipped.
+  const paceNominatim = !isConfigured(env.GOOGLE_MAPS_API_KEY);
+  const originGeo = await geocode(lead.originAddress, env);
+  if (paceNominatim && lead.originAddress && lead.destAddress) await sleep(1100);
+  const destGeo = await geocode(lead.destAddress, env);
   const columnValues = buildColumnValues({ lead, input, result, env, originGeo, destGeo });
 
   const itemName = lead.name || lead.email || lead.phone || "Soumission web";
@@ -317,6 +321,12 @@ async function geocodeNominatim(address) {
 function locationValue(address, geo) {
   if (!address || !geo || !geo.lat || !geo.lng) return null;
   return { lat: geo.lat, lng: geo.lng, address };
+}
+
+// Small delay used to keep the keyless Nominatim geocoder within its ~1 req/sec
+// usage policy when we look up two addresses back to back.
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // ---------------------------------------------------------------------------
