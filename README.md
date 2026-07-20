@@ -34,8 +34,10 @@ npm run dev        # local Worker at http://localhost:8787
 re-checked before every deploy. Quotes are shown **without taxes** (taxes en
 sus), so the totals are the pre-tax subtotals. Estimated work hours are trimmed
 by **1 h** for every size except **Maison** (`timeAdjustmentHours` in the
-config), so the 4½ base example is work `5−1=4` + travel `1` = `5 h` → subtotal
-`900` pre-tax (`1035` in May, `2250` on Jul 1).
+config). Travel is billed **aller-retour** (×2, the return trip; `travel.roundTripMultiplier`)
+and a flat **$1.8/km fuel** surcharge (`fuel.dollarsPerKm`) is added to the total.
+So the 4½ / 35 km base example is work `5−1=4` + travel `1×2=2` = `6 h` → labour
+`1080` + fuel `35×1.8=63` → total `1143` pre-tax (`1305` in May, `2763` on Jul 1).
 
 ## Go-live checklist
 

@@ -48,7 +48,13 @@
     "localHours": 1.0,
     "speedKmh": 90,
     "roundToHours": 0.5,
-    "_formula": "<=40km -> 1.0h forfait local; else round_nearest_0.5(distance / 90)"
+    "roundTripMultiplier": 2,
+    "_formula": "one-way: <=40km -> 1.0h forfait local; else round_nearest_0.5(distance / 90). Then x roundTripMultiplier (2) to bill the return trip (aller-retour)."
+  },
+
+  "fuel": {
+    "dollarsPerKm": 1.8,
+    "_note": "Fuel cost added to the subtotal as a flat dollar amount: distanceKm * dollarsPerKm (pre-tax). Independent of season/labour."
   },
 
   "season": [

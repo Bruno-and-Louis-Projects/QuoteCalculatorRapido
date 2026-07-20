@@ -49,9 +49,10 @@ rapido-quote/
 ```json
 {
   "ok": true, "type": "instant_quote", "currency": "CAD",
-  "breakdown": { "hourlyRate": 180, "workHours": 5, "travelHours": 1, "totalHours": 6,
-                 "seasonMult": 1.0, "subtotal": 1080.0, "taxMultiplier": 1.14975 },
-  "total": 1241.73
+  "breakdown": { "hourlyRate": 180, "workHours": 4, "travelHours": 2, "totalHours": 6,
+                 "seasonMult": 1.0, "laborSubtotal": 1080.0, "specialFee": 0, "fuelCost": 63.0,
+                 "subtotal": 1143.0, "taxMultiplier": 1.14975 },
+  "total": 1143.0
 }
 ```
 
@@ -72,9 +73,11 @@ Frontend shows "À partir de…" + a **Demander une soumission personnalisée** 
 - `tarif_horaire = 90 + 30 × movers`  →  120 / 150 / 180 / 210 / 240
 - `heures_travail` by size: 2½=2.5, 3½=4, 4½=5, 5½=5.5, 6½+=6, Maison=5.5
 - `ajustement_heures`: −1 h off `heures_travail` for every size **except Maison** (a house keeps its full estimate). Never below 0. Config: `timeAdjustmentHours`.
-- `heures_deplacement`: ≤40 km → 1.0 h ; else round_nearest_0.5(distance / 90)
+- `heures_deplacement`: ( ≤40 km → 1.0 h ; else round_nearest_0.5(distance / 90) ) **× 2** aller-retour (`travel.roundTripMultiplier` — the return trip; only the outbound leg used to be billed)
 - `majoration` = season table (peak around 1 juillet, ×2.50)
-- `sous_total = tarif_horaire × heures_totales × majoration`
+- `main_oeuvre = tarif_horaire × heures_totales × majoration`
+- `carburant = distance_km × 1.8` (`fuel.dollarsPerKm`) — flat dollar surcharge, added to the total
+- `sous_total = main_oeuvre + frais_éléments_particuliers + carburant`
 - `total = sous_total × 1.14975` (TPS + TVQ)
 
 Exclusions → custom quote: distance > 700 km, any special flag (piano, coffre-fort, objet d'art,
