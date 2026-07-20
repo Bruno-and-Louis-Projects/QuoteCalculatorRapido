@@ -248,6 +248,7 @@ function buildDetails({ lead, input, result }) {
     lines.push(`Majoration saison : ×${b.seasonMult}`);
     lines.push(`Main-d'œuvre : ${b.laborSubtotal} $`);
     if (b.specialFee) lines.push(`Frais éléments particuliers : ${b.specialFee} $`);
+    if (b.fuelCost) lines.push(`Carburant : ${b.fuelCost} $`);
     lines.push(`TOTAL (taxes en sus) : ${result.total} $`);
   } else {
     lines.push("Soumission PERSONNALISÉE requise (calculateur web)");

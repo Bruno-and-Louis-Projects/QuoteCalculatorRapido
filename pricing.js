@@ -48,8 +48,9 @@ export function computeQuote(input, cfg) {
 
   const laborSubtotal = round2(hourlyRate * totalHours * seasonMult);
   const specialFee = specialFeeFor(input.flags, cfg); // flat surcharge (piano/coffre-fort/objet d'art)
-  // Quote is shown WITHOUT taxes (taxes en sus). total = labour + flat fees, pre-tax.
-  const subtotal = round2(laborSubtotal + specialFee);
+  const fuelCost = fuelCostFor(input.distanceKm, cfg); // flat $/km fuel surcharge, added to the total
+  // Quote is shown WITHOUT taxes (taxes en sus). total = labour + flat fees + fuel, pre-tax.
+  const subtotal = round2(laborSubtotal + specialFee + fuelCost);
   const total = subtotal;
 
   return {
@@ -59,7 +60,7 @@ export function computeQuote(input, cfg) {
     inputs: { size: input.size, service, movers, distanceKm: input.distanceKm, date: input.date },
     breakdown: {
       hourlyRate, movers, workHours, travelHours, totalHours, seasonMult,
-      laborSubtotal, specialFee, subtotal, taxMultiplier: cfg.taxMultiplier
+      laborSubtotal, specialFee, fuelCost, subtotal, taxMultiplier: cfg.taxMultiplier
     },
     total // pré-taxes
   };
@@ -84,10 +85,21 @@ function specialFeeFor(flags, cfg) {
   return sf.amount * count;
 }
 
+// Travel time billed to the client. The one-way estimate is doubled (roundTripMultiplier)
+// because the crew has to drive back too — previously only the outbound leg was priced.
 function travelHoursFor(distanceKm, cfg) {
   const t = cfg.travel;
-  if (distanceKm <= t.localThresholdKm) return t.localHours;
-  return roundNearest(distanceKm / t.speedKmh, t.roundToHours);
+  const oneWay = distanceKm <= t.localThresholdKm
+    ? t.localHours
+    : roundNearest(distanceKm / t.speedKmh, t.roundToHours);
+  return round2(oneWay * (t.roundTripMultiplier ?? 1));
+}
+
+// Flat fuel surcharge in dollars, added straight to the total: distanceKm * dollarsPerKm.
+function fuelCostFor(distanceKm, cfg) {
+  const f = cfg.fuel;
+  if (!f || !f.dollarsPerKm) return 0;
+  return round2(distanceKm * f.dollarsPerKm);
 }
 
 function seasonMultiplier(date, cfg) {
@@ -130,5 +142,6 @@ function round2(n) { return Math.round(n * 100) / 100; }
 function isValidDate(s) { const d = new Date(s); return !Number.isNaN(d.getTime()); }
 
 // --- sanity check: 4½, 3 movers, 35 km, March ---
-// hourly 180, work 5-1=4 (−1 h refinement), travel 1 -> 5 h, mult 1.00 -> subtotal 900.00
+// hourly 180, work 5-1=4 (−1 h refinement), travel 1 one-way ×2 aller-retour = 2 -> 6 h,
+// mult 1.00 -> labour 1080.00; fuel 35 km × 1.8 = 63.00 -> total 1143.00.
 // (Maison is exempt from the −1 h: it keeps its full 5.5 h estimate.)
