@@ -31,7 +31,7 @@
   "specialFee": {
     "amount": 250,
     "flags": ["piano", "coffreFort", "objetArt"],
-    "_note": "Flat fee added to the subtotal PER checked item among these flags (1->250, 2->500, 3->750). Not itemized in the customer-facing widget; recorded in the Monday lead. These flags no longer route to a custom quote."
+    "_note": "Flat fee added to the subtotal PER checked item among these flags (1->250, 2->500, 3->750). Not itemized in the customer-facing widget; recorded in the CRM lead note. These flags no longer route to a custom quote."
   },
 
   "services": {
@@ -41,7 +41,7 @@
     "transportCommercial": { "label": "Transport Commercial",     "autoQuote": false },
     "sousTraitance":       { "label": "Sous-Traitance",           "autoQuote": false }
   },
-  "_servicesNote": "Only 'residentiel' is auto-priced (the pricing doc is residential). Others -> custom_quote (reason 'service'). label must match the Monday Service column label exactly. (Sous-Traitance kept here for back-compat; removed from the form.)",
+  "_servicesNote": "Only 'residentiel' is auto-priced (the pricing doc is residential). Others -> custom_quote (reason 'service'). label is the human-readable service name written into the CRM lead note. (Sous-Traitance kept here for back-compat; removed from the form.)",
 
   "travel": {
     "localThresholdKm": 40,
