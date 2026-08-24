@@ -39,6 +39,22 @@ and a flat **$1.8/km fuel** surcharge (`fuel.dollarsPerKm`) is added to the tota
 So the 4½ / 35 km base example is work `5−1=4` + travel `1×2=2` = `6 h` → labour
 `1080` + fuel `35×1.8=63` → total `1143` pre-tax (`1305` in May, `2763` on Jul 1).
 
+## Hosting
+
+The Worker runs on **Groupe Rapido's business Cloudflare account** and is served
+from `https://quotecalculatorrapido.brunomjacques.workers.dev`. That hostname is
+tied to the account: if the Worker ever moves accounts again, the `workers.dev`
+subdomain changes and the `<script src>` in `elementor/embed.html` must be
+re-pasted into Elementor, since the live page hardcodes it. Putting the Worker on
+a custom domain (e.g. `quote.servicerapido.com`) would make the URL
+account-independent and avoid that step — see SPEC §7.
+
+Secrets (`MONDAY_TOKEN`, optional `GOOGLE_MAPS_API_KEY`) live in that account
+only. They are write-only and cannot be exported, so they must be re-entered by
+hand on any new account — and a missing `MONDAY_TOKEN` fails **silently**:
+quotes still price correctly, leads just stop reaching Monday. Verify with a real
+test lead, never by assuming a green deploy.
+
 ## Go-live checklist
 
 The domain, the Monday board, and the column mapping are all wired in
