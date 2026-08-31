@@ -40,7 +40,7 @@ export async function createSmartMovingLead({ lead, input, result, env }) {
   const payload = buildLeadPayload({ lead, input, result, originParts, destParts });
 
   const url = new URL(SMARTMOVING_LEAD_URL);
-  url.searchParams.set("providerKey", env.SMARTMOVING_PROVIDER_KEY);
+  url.searchParams.set("providerKey", normalizeProviderKey(env.SMARTMOVING_PROVIDER_KEY));
   if (isConfigured(env.SMARTMOVING_BRANCH_ID)) {
     url.searchParams.set("branchId", env.SMARTMOVING_BRANCH_ID);
   }
@@ -53,7 +53,13 @@ export async function createSmartMovingLead({ lead, input, result, env }) {
 
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`SmartMoving API ${res.status}: ${text.slice(0, 500)}`);
+    // SmartMoving documents one expected 400: a duplicate submission. Label it
+    // so it reads as "already have this lead", not as a broken integration.
+    const duplicate = res.status === 400 && /already been submitted/i.test(text);
+    throw new Error(
+      `SmartMoving API ${res.status}${duplicate ? " (duplicate lead — already in SmartMoving)" : ""}: ` +
+        text.slice(0, 500)
+    );
   }
   return text;
 }
@@ -85,18 +91,24 @@ export function buildLeadPayload({ lead, input, result, originParts, destParts }
 
   // Bedrooms, derived from the Québec-style size (3½ = 1 chambre, 4½ = 2, …).
   // Left off for "maison", where the room count isn't implied by the label.
+  // SmartMoving documents this as a STRING ("String describing the number of
+  // bedrooms", sample value "5 rooms"), so send it as one.
   const bedrooms = BEDROOMS[input.size];
-  if (bedrooms !== undefined) p.bedrooms = bedrooms;
+  if (bedrooms !== undefined) p.bedrooms = String(bedrooms);
 
-  if (originParts.street) p.originStreet = originParts.street;
-  if (originParts.city) p.originCity = originParts.city;
-  if (originParts.state) p.originState = originParts.state;
-  if (originParts.zip) p.originZip = originParts.zip;
+  // ServiceType is a closed vocabulary; send it only where our service maps
+  // cleanly, since a wrong value is worse than none. "livraison" has no
+  // equivalent in their list, so it's left out and described in the note.
+  const serviceType = SERVICE_TYPES[input.service];
+  if (serviceType) p.serviceType = serviceType;
 
-  if (destParts.street) p.destinationStreet = destParts.street;
-  if (destParts.city) p.destinationCity = destParts.city;
-  if (destParts.state) p.destinationState = destParts.state;
-  if (destParts.zip) p.destinationZip = destParts.zip;
+  // Provenance is exactly SmartMoving's ReferralSource, so it belongs in the
+  // field rather than buried in the note. Our form is a fixed dropdown, which
+  // is what they recommend — free text would spawn endless referral sources.
+  if (lead.provenance) p.referralSource = lead.provenance;
+
+  Object.assign(p, addressFields("origin", originParts));
+  Object.assign(p, addressFields("destination", destParts));
 
   p.notes = buildDetails({ lead, input, result });
 
@@ -134,7 +146,6 @@ function buildDetails({ lead, input, result }) {
   lines.push(`Adresse de départ : ${lead.originAddress || "—"}`);
   lines.push(`Adresse de destination : ${lead.destAddress || "—"}`);
   lines.push(`Éléments particuliers : ${flags}`);
-  lines.push(`Provenance : ${lead.provenance || "—"}`);
   if (lead.notes) {
     lines.push("");
     lines.push(`Notes du client : ${lead.notes}`);
@@ -166,11 +177,31 @@ async function resolveAddress(address, env) {
   }
   geo = geo || {};
   return {
-    street: geo.street || local.street || address,
+    street: geo.street || local.street || "",
     city: geo.city || local.city || "",
     state: geo.state || local.state || "",
     zip: geo.zip || local.zip || "",
+    full: address, // used verbatim when the split isn't trustworthy
   };
+}
+
+// SmartMoving is explicit: pass the individual components OR the full address,
+// NEVER both. So only claim components when the split actually produced
+// structure (a street plus a city or postal code); otherwise hand over the
+// original line as *AddressFull and let SmartMoving parse it. The old
+// behaviour — dropping the whole line into *Street — was the one case that
+// silently sent a malformed address rather than an honest unparsed one.
+function addressFields(prefix, parts) {
+  const out = {};
+  if (parts.street && (parts.city || parts.zip)) {
+    out[`${prefix}Street`] = parts.street;
+    if (parts.city) out[`${prefix}City`] = parts.city;
+    if (parts.state) out[`${prefix}State`] = parts.state;
+    if (parts.zip) out[`${prefix}Zip`] = parts.zip;
+  } else if (parts.full) {
+    out[`${prefix}AddressFull`] = parts.full;
+  }
+  return out;
 }
 
 // Best-effort split of a typed address line, no network involved.
@@ -388,6 +419,16 @@ function sizeLabel(size) { return SIZE_LABELS[size] || size || ""; }
 // and the size always appears in full in the note anyway.
 const BEDROOMS = { "2.5": 1, "3.5": 1, "4.5": 2, "5.5": 3, "6.5": 4 };
 
+// Our service keys -> SmartMoving's fixed ServiceType vocabulary (Moving,
+// Packing, MovingAndPacking, LoadOnly, UnloadOnly, Commercial, StorageInBound,
+// StorageOutBound, InnerHouse, JunkRemoval, LaborOnly). Anything without a
+// clean equivalent is deliberately absent rather than guessed.
+const SERVICE_TYPES = {
+  residentiel: "Moving",
+  commercial: "Commercial",
+  transportCommercial: "Commercial",
+};
+
 // Labels for special-item flags and custom-quote reasons (used in the CRM note).
 const FLAG_LABELS = {
   piano: "Piano", coffreFort: "Coffre-fort", objetArt: "Objet d'art",
@@ -412,3 +453,46 @@ export function isConfigured(v) {
 }
 
 export function clean(v) { return typeof v === "string" ? v.trim() : ""; }
+
+// ---------------------------------------------------------------------------
+// Provider key hygiene.
+//
+// A key SmartMoving doesn't recognise is rejected with
+// 400 {"message":"Provider not found."} — which says nothing about WHY, so a
+// stray character costs a full debugging cycle. Two defences:
+//
+//   1. SmartMoving's own UI offers both a "Provider Key" and an "API Link"
+//      (their help article is literally titled "Lookup a Provider Key / API
+//      Link"), so pasting the whole URL instead of the bare key is an easy and
+//      invisible mistake. Accept either.
+//   2. Trim whitespace and wrapping quotes — a trailing newline from a copy or
+//      a dashboard field survives into the query string as %0A and fails the
+//      lookup while looking perfectly correct on screen.
+// ---------------------------------------------------------------------------
+export function normalizeProviderKey(raw) {
+  const trimmed = clean(raw).replace(/^["']+|["']+$/g, "").trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const fromUrl = new URL(trimmed).searchParams.get("providerKey");
+      if (fromUrl && fromUrl.trim()) return fromUrl.trim();
+    } catch {
+      // Not a parseable URL after all — fall through and use it as-is.
+    }
+  }
+  return trimmed;
+}
+
+// Shape of the configured key, for /health. Never returns the value itself —
+// only what's needed to tell "wrong key" from "malformed key": a pasted URL or
+// a truncated paste shows up immediately as a wrong length / non-UUID shape.
+const PROVIDER_KEY_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function describeProviderKey(raw) {
+  const key = normalizeProviderKey(raw);
+  return {
+    present: key !== "",
+    length: key.length,
+    looksLikeUuid: PROVIDER_KEY_UUID.test(key),
+    extractedFromUrl: /^https?:\/\//i.test(clean(raw)),
+  };
+}

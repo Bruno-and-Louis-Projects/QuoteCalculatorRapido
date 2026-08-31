@@ -4,7 +4,10 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildLeadPayload, parseAddressText, provinceCode, splitName } from "../src/smartmoving.js";
+import {
+  buildLeadPayload, describeProviderKey, normalizeProviderKey,
+  parseAddressText, provinceCode, splitName,
+} from "../src/smartmoving.js";
 
 const lead = (over = {}) => ({
   name: "Marie Tremblay",
@@ -33,8 +36,8 @@ const instant = {
 const build = (over = {}) =>
   buildLeadPayload({
     lead: lead(), input: input(), result: instant,
-    originParts: { street: "123 rue Principale", city: "Montréal", state: "QC", zip: "H2X 1Y4" },
-    destParts: { street: "9 avenue des Pins", city: "Laval", state: "QC", zip: "H7N 3S5" },
+    originParts: { street: "123 rue Principale", city: "Montréal", state: "QC", zip: "H2X 1Y4", full: lead().originAddress },
+    destParts: { street: "9 avenue des Pins", city: "Laval", state: "QC", zip: "H7N 3S5", full: lead().destAddress },
     ...over,
   });
 
@@ -71,16 +74,45 @@ test("moveDate is YYYYMMDD, and a malformed date is omitted rather than sent", (
   assert.ok(!("moveDate" in build({ input: input({ date: undefined }) })));
 });
 
-test("bedrooms are derived from the Québec size, and skipped for 'maison'", () => {
-  assert.equal(build({ input: input({ size: "3.5" }) }).bedrooms, 1);
-  assert.equal(build({ input: input({ size: "5.5" }) }).bedrooms, 3);
+test("bedrooms are derived from the Québec size, as a STRING, skipped for 'maison'", () => {
+  // SmartMoving documents Bedrooms as a string, not a number.
+  assert.strictEqual(build({ input: input({ size: "3.5" }) }).bedrooms, "1");
+  assert.strictEqual(build({ input: input({ size: "4.5" }) }).bedrooms, "2");
+  assert.strictEqual(build({ input: input({ size: "5.5" }) }).bedrooms, "3");
   assert.ok(!("bedrooms" in build({ input: input({ size: "maison" }) })));
 });
 
-test("empty address parts are omitted, never sent blank", () => {
-  const p = build({ destParts: { street: "9 av. des Pins", city: "", state: "", zip: "" } });
-  assert.equal(p.destinationStreet, "9 av. des Pins");
-  assert.ok(!("destinationCity" in p) && !("destinationZip" in p));
+test("addresses are sent as components OR AddressFull, never both", () => {
+  // Components, because the split produced real structure.
+  const split = build();
+  assert.equal(split.originStreet, "123 rue Principale");
+  assert.equal(split.originCity, "Montréal");
+  assert.ok(!("originAddressFull" in split), "components and full must never both be sent");
+
+  // No city and no postal code = an untrustworthy split, so hand over the raw
+  // line and let SmartMoving parse it rather than passing it off as a street.
+  const unparsed = build({
+    destParts: { street: "", city: "", state: "", zip: "", full: "quelque part à Laval" },
+  });
+  assert.equal(unparsed.destinationAddressFull, "quelque part à Laval");
+  assert.ok(!("destinationStreet" in unparsed) && !("destinationCity" in unparsed));
+
+  // Nothing at all: send neither, rather than empty strings.
+  const none = build({ destParts: {} });
+  assert.ok(!("destinationAddressFull" in none) && !("destinationStreet" in none));
+});
+
+test("provenance becomes referralSource, not a line buried in the note", () => {
+  const p = build();
+  assert.equal(p.referralSource, "Facebook");
+  assert.ok(!/Provenance :/.test(p.notes), "no longer duplicated into the note");
+});
+
+test("serviceType uses SmartMoving's vocabulary, and is omitted when unmapped", () => {
+  assert.equal(build({ input: input({ service: "residentiel" }) }).serviceType, "Moving");
+  assert.equal(build({ input: input({ service: "commercial" }) }).serviceType, "Commercial");
+  // "livraison" has no equivalent in their closed list — better absent than wrong.
+  assert.ok(!("serviceType" in build({ input: input({ service: "livraison" }) })));
 });
 
 test("notes carry the quote breakdown, provenance and the customer's message", () => {
@@ -88,7 +120,6 @@ test("notes carry the quote breakdown, provenance and the customer's message", (
   assert.match(n, /TOTAL \(taxes en sus\) : 1143 \$/);
   assert.match(n, /Déménageurs : 3/);
   assert.match(n, /Distance : 35 km/);
-  assert.match(n, /Provenance : Facebook/);
   assert.match(n, /Notes du client : Piano au 2e étage\./);
   // The full free-text lines survive even when the split above succeeded.
   assert.match(n, /Adresse de départ : 123 rue Principale, Montréal, QC H2X 1Y4/);
@@ -128,4 +159,44 @@ test("provinceCode is accent- and case-insensitive, and rejects non-provinces", 
 test("splitName keeps compound surnames together", () => {
   assert.deepEqual(splitName("Jean-Luc St Pierre"), { firstName: "Jean-Luc", lastName: "St Pierre" });
   assert.deepEqual(splitName("Cher"), { firstName: "", lastName: "" });
+});
+
+// --- Provider key hygiene ---------------------------------------------------
+// A key SmartMoving doesn't recognise fails with 400 {"message":"Provider not
+// found."} and no hint as to why, so the cheap paste mistakes are normalised.
+
+test("normalizeProviderKey accepts the bare key, a pasted API link, or a messy paste", () => {
+  const KEY = "54bc9848-ad05-4b43-bf74-b4a200fb9a9a";
+  assert.equal(normalizeProviderKey(KEY), KEY);
+  // The whole API link, which SmartMoving's own UI also offers.
+  assert.equal(
+    normalizeProviderKey(`https://api.smartmoving.com/api/leads/from-provider/v2?providerKey=${KEY}`),
+    KEY
+  );
+  // Trailing newline / spaces / wrapping quotes from a copy-paste.
+  assert.equal(normalizeProviderKey(`  ${KEY}\n`), KEY);
+  assert.equal(normalizeProviderKey(`"${KEY}"`), KEY);
+  assert.equal(normalizeProviderKey(""), "");
+  assert.equal(normalizeProviderKey(undefined), "");
+  // A URL with no providerKey param is left alone rather than silently emptied.
+  assert.equal(normalizeProviderKey("https://example.com/nope"), "https://example.com/nope");
+});
+
+test("describeProviderKey reports shape without ever exposing the key", () => {
+  const KEY = "54bc9848-ad05-4b43-bf74-b4a200fb9a9a";
+  const good = describeProviderKey(KEY);
+  assert.deepEqual(good, { present: true, length: 36, looksLikeUuid: true, extractedFromUrl: false });
+  assert.ok(!JSON.stringify(good).includes(KEY), "the key must never appear in the report");
+
+  assert.deepEqual(describeProviderKey(""), {
+    present: false, length: 0, looksLikeUuid: false, extractedFromUrl: false,
+  });
+  // A truncated paste is visible as a wrong length / non-UUID shape.
+  const short = describeProviderKey("54bc9848-ad05");
+  assert.equal(short.looksLikeUuid, false);
+  assert.equal(short.length, 13);
+  // A pasted link is flagged, and measured after extraction.
+  const fromUrl = describeProviderKey(`https://api.smartmoving.com/api/leads/from-provider/v2?providerKey=${KEY}`);
+  assert.equal(fromUrl.extractedFromUrl, true);
+  assert.equal(fromUrl.looksLikeUuid, true);
 });
