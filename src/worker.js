@@ -14,7 +14,7 @@
 import { computeQuote } from "../pricing.js";
 import pricingConfig from "../pricing.config.json"; // bundler inlines this JSON
 import widgetClient from "../elementor/widget.client.txt"; // served at GET /widget.js
-import { createSmartMovingLead, isConfigured, clean } from "./smartmoving.js";
+import { createSmartMovingLead, describeProviderKey, isConfigured, clean } from "./smartmoving.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -49,6 +49,9 @@ export default {
           ok: true,
           crm: "smartmoving",
           providerKeyConfigured: isConfigured(env.SMARTMOVING_PROVIDER_KEY),
+          // Shape only — never the key itself. Distinguishes a wrong key
+          // from a malformed one (pasted URL, truncated, trailing newline).
+          providerKey: describeProviderKey(env.SMARTMOVING_PROVIDER_KEY),
           branchIdConfigured: isConfigured(env.SMARTMOVING_BRANCH_ID),
           googleGeocodingKeyConfigured: isConfigured(env.GOOGLE_MAPS_API_KEY),
           // NAMES ONLY of everything bound to this version — never any value.

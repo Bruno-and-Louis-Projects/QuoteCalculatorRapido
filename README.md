@@ -157,6 +157,13 @@ Notes on this mapping:
 - **A failed lead POST never blocks the customer's quote.** It runs in
   `ctx.waitUntil` and logs to `wrangler tail` on failure; the price still
   returns. That's why go-live needs one real test lead, not just a green deploy.
+- **A key SmartMoving doesn't recognise fails with
+  `400 {"message":"Provider not found."}`** — rejected at the provider lookup,
+  before any field is read, so it says nothing about the payload. Check the key
+  itself and that **Settings → Sales → Lead Providers → Your Website** is
+  enabled. The Worker normalises the configured value first: whitespace and
+  wrapping quotes are stripped, and a pasted *API link* has its `providerKey`
+  extracted (SmartMoving's UI offers both, so pasting the link is easy).
 - **`GET /health` reports whether this build has the key**, e.g.
   `{"ok":true,"crm":"smartmoving","providerKeyConfigured":true,...}`. It returns
   only whether each key is *present*, never its value. Use it as the first check

@@ -4,7 +4,10 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildLeadPayload, parseAddressText, provinceCode, splitName } from "../src/smartmoving.js";
+import {
+  buildLeadPayload, describeProviderKey, normalizeProviderKey,
+  parseAddressText, provinceCode, splitName,
+} from "../src/smartmoving.js";
 
 const lead = (over = {}) => ({
   name: "Marie Tremblay",
@@ -128,4 +131,44 @@ test("provinceCode is accent- and case-insensitive, and rejects non-provinces", 
 test("splitName keeps compound surnames together", () => {
   assert.deepEqual(splitName("Jean-Luc St Pierre"), { firstName: "Jean-Luc", lastName: "St Pierre" });
   assert.deepEqual(splitName("Cher"), { firstName: "", lastName: "" });
+});
+
+// --- Provider key hygiene ---------------------------------------------------
+// A key SmartMoving doesn't recognise fails with 400 {"message":"Provider not
+// found."} and no hint as to why, so the cheap paste mistakes are normalised.
+
+test("normalizeProviderKey accepts the bare key, a pasted API link, or a messy paste", () => {
+  const KEY = "54bc9848-ad05-4b43-bf74-b4a200fb9a9a";
+  assert.equal(normalizeProviderKey(KEY), KEY);
+  // The whole API link, which SmartMoving's own UI also offers.
+  assert.equal(
+    normalizeProviderKey(`https://api.smartmoving.com/api/leads/from-provider/v2?providerKey=${KEY}`),
+    KEY
+  );
+  // Trailing newline / spaces / wrapping quotes from a copy-paste.
+  assert.equal(normalizeProviderKey(`  ${KEY}\n`), KEY);
+  assert.equal(normalizeProviderKey(`"${KEY}"`), KEY);
+  assert.equal(normalizeProviderKey(""), "");
+  assert.equal(normalizeProviderKey(undefined), "");
+  // A URL with no providerKey param is left alone rather than silently emptied.
+  assert.equal(normalizeProviderKey("https://example.com/nope"), "https://example.com/nope");
+});
+
+test("describeProviderKey reports shape without ever exposing the key", () => {
+  const KEY = "54bc9848-ad05-4b43-bf74-b4a200fb9a9a";
+  const good = describeProviderKey(KEY);
+  assert.deepEqual(good, { present: true, length: 36, looksLikeUuid: true, extractedFromUrl: false });
+  assert.ok(!JSON.stringify(good).includes(KEY), "the key must never appear in the report");
+
+  assert.deepEqual(describeProviderKey(""), {
+    present: false, length: 0, looksLikeUuid: false, extractedFromUrl: false,
+  });
+  // A truncated paste is visible as a wrong length / non-UUID shape.
+  const short = describeProviderKey("54bc9848-ad05");
+  assert.equal(short.looksLikeUuid, false);
+  assert.equal(short.length, 13);
+  // A pasted link is flagged, and measured after extraction.
+  const fromUrl = describeProviderKey(`https://api.smartmoving.com/api/leads/from-provider/v2?providerKey=${KEY}`);
+  assert.equal(fromUrl.extractedFromUrl, true);
+  assert.equal(fromUrl.looksLikeUuid, true);
 });

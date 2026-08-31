@@ -40,7 +40,7 @@ export async function createSmartMovingLead({ lead, input, result, env }) {
   const payload = buildLeadPayload({ lead, input, result, originParts, destParts });
 
   const url = new URL(SMARTMOVING_LEAD_URL);
-  url.searchParams.set("providerKey", env.SMARTMOVING_PROVIDER_KEY);
+  url.searchParams.set("providerKey", normalizeProviderKey(env.SMARTMOVING_PROVIDER_KEY));
   if (isConfigured(env.SMARTMOVING_BRANCH_ID)) {
     url.searchParams.set("branchId", env.SMARTMOVING_BRANCH_ID);
   }
@@ -412,3 +412,46 @@ export function isConfigured(v) {
 }
 
 export function clean(v) { return typeof v === "string" ? v.trim() : ""; }
+
+// ---------------------------------------------------------------------------
+// Provider key hygiene.
+//
+// A key SmartMoving doesn't recognise is rejected with
+// 400 {"message":"Provider not found."} — which says nothing about WHY, so a
+// stray character costs a full debugging cycle. Two defences:
+//
+//   1. SmartMoving's own UI offers both a "Provider Key" and an "API Link"
+//      (their help article is literally titled "Lookup a Provider Key / API
+//      Link"), so pasting the whole URL instead of the bare key is an easy and
+//      invisible mistake. Accept either.
+//   2. Trim whitespace and wrapping quotes — a trailing newline from a copy or
+//      a dashboard field survives into the query string as %0A and fails the
+//      lookup while looking perfectly correct on screen.
+// ---------------------------------------------------------------------------
+export function normalizeProviderKey(raw) {
+  const trimmed = clean(raw).replace(/^["']+|["']+$/g, "").trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const fromUrl = new URL(trimmed).searchParams.get("providerKey");
+      if (fromUrl && fromUrl.trim()) return fromUrl.trim();
+    } catch {
+      // Not a parseable URL after all — fall through and use it as-is.
+    }
+  }
+  return trimmed;
+}
+
+// Shape of the configured key, for /health. Never returns the value itself —
+// only what's needed to tell "wrong key" from "malformed key": a pasted URL or
+// a truncated paste shows up immediately as a wrong length / non-UUID shape.
+const PROVIDER_KEY_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function describeProviderKey(raw) {
+  const key = normalizeProviderKey(raw);
+  return {
+    present: key !== "",
+    length: key.length,
+    looksLikeUuid: PROVIDER_KEY_UUID.test(key),
+    extractedFromUrl: /^https?:\/\//i.test(clean(raw)),
+  };
+}
