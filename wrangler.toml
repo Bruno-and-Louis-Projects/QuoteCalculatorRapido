@@ -34,8 +34,13 @@ RATE_LIMIT_MAX = "8"
 # The lead endpoint is:
 #   POST https://api.smartmoving.com/api/leads/from-provider/v2?providerKey=...
 # The provider key IS the credential, so it is a secret, not a var here (see
-# below). Look it up in SmartMoving: Settings -> Sales -> Lead Providers ->
-# Your Website -> View Instructions.
+# below). Take it from SmartMoving's CUSTOM LEAD PROVIDER, not from "Your
+# Website": their integration guide points at Settings -> Sales -> Lead
+# Providers -> Your Website, but that key is rejected on this account with
+# 400 {"message":"Provider not found."}. Both are UUIDs and the error names
+# neither, so the wrong one is impossible to spot without knowing this.
+# Set it under Cloudflare's RUNTIME variables and secrets -- the similarly
+# named "Build variables and secrets" never reaches the running Worker.
 #
 # Optional: route every lead to one SmartMoving branch. Leave unset (or as a
 # <PLACEHOLDER>) to let SmartMoving assign the branch itself.

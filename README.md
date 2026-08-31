@@ -67,10 +67,24 @@ What's left:
    `SMARTMOVING_PROVIDER_KEY` as an encrypted secret in the Cloudflare dashboard
    (Workers & Pages → `quotecalculatorrapido` → Settings → Variables and
    Secrets → Encrypt), or via CLI:
-   `npx wrangler secret put SMARTMOVING_PROVIDER_KEY`. Look the key up in
-   SmartMoving under Settings → Sales → Lead Providers → Your Website → View
-   Instructions. It is the only credential the endpoint uses, which is why it
-   is a secret and not a committed var.
+   `npx wrangler secret put SMARTMOVING_PROVIDER_KEY`. It is the only
+   credential the endpoint uses, which is why it is a secret and not a
+   committed var.
+
+   **Use the Custom Lead Provider key, not the "Your Website" one.**
+   SmartMoving's integration guide tells you to take the key from Settings →
+   Sales → Lead Providers → **Your Website** → View Instructions. On this
+   account that key is rejected with `400 {"message":"Provider not found."}`.
+   The key from the **Custom Lead Provider** is the one that works. Both keys
+   look identical (a UUID) and the error names neither, so this is invisible
+   without knowing it — hence this note.
+
+   **Set it under Cloudflare's "Runtime variables and secrets", not "Build
+   variables and secrets".** The two sit on the same settings page and are
+   named almost identically; the build one exists only while the code is
+   compiled and never reaches the running Worker. `GET /health` reports which
+   names are actually bound, so it will tell you immediately if this went
+   wrong.
 2. **Deploy** — merge to `main` (the connected Workers Build deploys), or run
    `npm run deploy` locally.
 3. **Paste `elementor/embed.html` ONCE** into an Elementor HTML widget (or
@@ -174,9 +188,10 @@ Notes on this mapping:
   returns. That's why go-live needs one real test lead, not just a green deploy.
 - **A key SmartMoving doesn't recognise fails with
   `400 {"message":"Provider not found."}`** — rejected at the provider lookup,
-  before any field is read, so it says nothing about the payload. Check the key
-  itself and that **Settings → Sales → Lead Providers → Your Website** is
-  enabled. The Worker normalises the configured value first: whitespace and
+  before any field is read, so it says nothing about the payload. In practice
+  the cause was the **wrong kind of provider key**: the "Your Website" key from
+  their integration guide is rejected on this account, and the **Custom Lead
+  Provider** key is the one that works. Also confirm the provider is enabled. The Worker normalises the configured value first: whitespace and
   wrapping quotes are stripped, and a pasted *API link* has its `providerKey`
   extracted (SmartMoving's UI offers both, so pasting the link is easy).
 - **`GET /health` reports whether this build has the key**, e.g.

@@ -93,8 +93,9 @@ email branch. (Leads went to a Monday board until Aug 2026; SmartMoving replaced
 
 - **Mechanism:** on a successful quote the Worker POSTs JSON to SmartMoving's lead-provider endpoint,
   `POST /api/leads/from-provider/v2?providerKey=…`. Every field sits at the root of the body.
-- **Needed from Bruno (one-time):** the SmartMoving provider key (Settings → Sales → Lead Providers →
-  Your Website → View Instructions), and optionally a `branchId` if leads should pin to one branch.
+- **Needed from Bruno (one-time):** the SmartMoving provider key — from the **Custom Lead Provider**,
+  not "Your Website"; the latter is what their guide documents but it is rejected on this account with
+  `Provider not found.` Optionally a `branchId` if leads should pin to one branch.
 - **Secret:** `wrangler secret put SMARTMOVING_PROVIDER_KEY`. Never in the repo — the key alone
   authorises lead creation.
 - **Field mapping:** `buildLeadPayload()` in `src/smartmoving.js`, pinned by `test/smartmoving.test.js`.
