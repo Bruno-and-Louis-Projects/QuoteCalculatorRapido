@@ -157,3 +157,11 @@ Notes on this mapping:
 - **A failed lead POST never blocks the customer's quote.** It runs in
   `ctx.waitUntil` and logs to `wrangler tail` on failure; the price still
   returns. That's why go-live needs one real test lead, not just a green deploy.
+- **Secrets attach to a Worker *version*, not to the Worker.** A version is an
+  immutable snapshot of code **and** bindings, so adding
+  `SMARTMOVING_PROVIDER_KEY` creates a *new* version rather than back-filling
+  existing ones. A preview build produced before the secret was set will never
+  see it, and will skip lead creation while still returning a correct quote — so
+  **rebuild the branch after setting the secret**, don't just re-enter it. The
+  Worker logs `SMARTMOVING_PROVIDER_KEY not configured on this Worker version`
+  in that case, which is what `wrangler tail` will show.

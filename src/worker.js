@@ -105,6 +105,19 @@ export default {
           console.error("SmartMoving lead creation failed:", err?.message || err);
         })
       );
+    } else {
+      // Loud on purpose. A missing key drops the lead in a way the customer's
+      // response can't reveal — they still get their price — so without this
+      // line `wrangler tail` shows nothing at all and a dead integration looks
+      // identical to a healthy one. The usual cause is a Worker VERSION that
+      // predates the secret: a version is an immutable snapshot of code AND
+      // bindings, so adding a secret creates a new version rather than
+      // attaching to existing ones (a preview build from before the secret was
+      // set will never see it). Rebuild, don't re-set the secret.
+      console.error(
+        "SMARTMOVING_PROVIDER_KEY not configured on this Worker version — lead NOT sent",
+        `(${result.type}, ${result.total ?? "n/a"} $)`
+      );
     }
 
     return json(result, 200, cors);
