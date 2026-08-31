@@ -36,6 +36,27 @@ export default {
       });
     }
 
+    // --- Config probe -------------------------------------------------------
+    // GET /health answers the one question that is otherwise invisible from
+    // outside the Worker: does THIS version have the SmartMoving key bound?
+    // Bindings are versioned, so a build created before the secret was set
+    // reports false while still serving perfectly correct quotes — which is
+    // exactly the failure that looks like success. Reports only WHETHER each
+    // key is present, never its value.
+    if (request.method === "GET" && url.pathname === "/health") {
+      return json(
+        {
+          ok: true,
+          crm: "smartmoving",
+          providerKeyConfigured: isConfigured(env.SMARTMOVING_PROVIDER_KEY),
+          branchIdConfigured: isConfigured(env.SMARTMOVING_BRANCH_ID),
+          googleGeocodingKeyConfigured: isConfigured(env.GOOGLE_MAPS_API_KEY),
+        },
+        200,
+        { ...cors, "Cache-Control": "no-store" }
+      );
+    }
+
     // --- CORS preflight ---
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });

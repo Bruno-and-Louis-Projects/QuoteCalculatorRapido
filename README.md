@@ -157,6 +157,11 @@ Notes on this mapping:
 - **A failed lead POST never blocks the customer's quote.** It runs in
   `ctx.waitUntil` and logs to `wrangler tail` on failure; the price still
   returns. That's why go-live needs one real test lead, not just a green deploy.
+- **`GET /health` reports whether this build has the key**, e.g.
+  `{"ok":true,"crm":"smartmoving","providerKeyConfigured":true,...}`. It returns
+  only whether each key is *present*, never its value. Use it as the first check
+  on any deploy — production or a preview build — because a Worker serving
+  perfect quotes tells you nothing about whether its CRM key is bound.
 - **Secrets attach to a Worker *version*, not to the Worker.** A version is an
   immutable snapshot of code **and** bindings, so adding
   `SMARTMOVING_PROVIDER_KEY` creates a *new* version rather than back-filling
