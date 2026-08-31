@@ -36,8 +36,8 @@ const instant = {
 const build = (over = {}) =>
   buildLeadPayload({
     lead: lead(), input: input(), result: instant,
-    originParts: { street: "123 rue Principale", city: "Montréal", state: "QC", zip: "H2X 1Y4" },
-    destParts: { street: "9 avenue des Pins", city: "Laval", state: "QC", zip: "H7N 3S5" },
+    originParts: { street: "123 rue Principale", city: "Montréal", state: "QC", zip: "H2X 1Y4", full: lead().originAddress },
+    destParts: { street: "9 avenue des Pins", city: "Laval", state: "QC", zip: "H7N 3S5", full: lead().destAddress },
     ...over,
   });
 
@@ -74,16 +74,45 @@ test("moveDate is YYYYMMDD, and a malformed date is omitted rather than sent", (
   assert.ok(!("moveDate" in build({ input: input({ date: undefined }) })));
 });
 
-test("bedrooms are derived from the Québec size, and skipped for 'maison'", () => {
-  assert.equal(build({ input: input({ size: "3.5" }) }).bedrooms, 1);
-  assert.equal(build({ input: input({ size: "5.5" }) }).bedrooms, 3);
+test("bedrooms are derived from the Québec size, as a STRING, skipped for 'maison'", () => {
+  // SmartMoving documents Bedrooms as a string, not a number.
+  assert.strictEqual(build({ input: input({ size: "3.5" }) }).bedrooms, "1");
+  assert.strictEqual(build({ input: input({ size: "4.5" }) }).bedrooms, "2");
+  assert.strictEqual(build({ input: input({ size: "5.5" }) }).bedrooms, "3");
   assert.ok(!("bedrooms" in build({ input: input({ size: "maison" }) })));
 });
 
-test("empty address parts are omitted, never sent blank", () => {
-  const p = build({ destParts: { street: "9 av. des Pins", city: "", state: "", zip: "" } });
-  assert.equal(p.destinationStreet, "9 av. des Pins");
-  assert.ok(!("destinationCity" in p) && !("destinationZip" in p));
+test("addresses are sent as components OR AddressFull, never both", () => {
+  // Components, because the split produced real structure.
+  const split = build();
+  assert.equal(split.originStreet, "123 rue Principale");
+  assert.equal(split.originCity, "Montréal");
+  assert.ok(!("originAddressFull" in split), "components and full must never both be sent");
+
+  // No city and no postal code = an untrustworthy split, so hand over the raw
+  // line and let SmartMoving parse it rather than passing it off as a street.
+  const unparsed = build({
+    destParts: { street: "", city: "", state: "", zip: "", full: "quelque part à Laval" },
+  });
+  assert.equal(unparsed.destinationAddressFull, "quelque part à Laval");
+  assert.ok(!("destinationStreet" in unparsed) && !("destinationCity" in unparsed));
+
+  // Nothing at all: send neither, rather than empty strings.
+  const none = build({ destParts: {} });
+  assert.ok(!("destinationAddressFull" in none) && !("destinationStreet" in none));
+});
+
+test("provenance becomes referralSource, not a line buried in the note", () => {
+  const p = build();
+  assert.equal(p.referralSource, "Facebook");
+  assert.ok(!/Provenance :/.test(p.notes), "no longer duplicated into the note");
+});
+
+test("serviceType uses SmartMoving's vocabulary, and is omitted when unmapped", () => {
+  assert.equal(build({ input: input({ service: "residentiel" }) }).serviceType, "Moving");
+  assert.equal(build({ input: input({ service: "commercial" }) }).serviceType, "Commercial");
+  // "livraison" has no equivalent in their closed list — better absent than wrong.
+  assert.ok(!("serviceType" in build({ input: input({ service: "livraison" }) })));
 });
 
 test("notes carry the quote breakdown, provenance and the customer's message", () => {
@@ -91,7 +120,6 @@ test("notes carry the quote breakdown, provenance and the customer's message", (
   assert.match(n, /TOTAL \(taxes en sus\) : 1143 \$/);
   assert.match(n, /Déménageurs : 3/);
   assert.match(n, /Distance : 35 km/);
-  assert.match(n, /Provenance : Facebook/);
   assert.match(n, /Notes du client : Piano au 2e étage\./);
   // The full free-text lines survive even when the split above succeeded.
   assert.match(n, /Adresse de départ : 123 rue Principale, Montréal, QC H2X 1Y4/);

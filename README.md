@@ -96,10 +96,12 @@ Every property sits at the **root** of the JSON body. Mapping lives in
 | Téléphone | `phoneNumber` |
 | Courriel | `email` |
 | Date du déménagement | `moveDate` (reformatted to `YYYYMMDD`) |
-| Type de logement | `bedrooms` (3½ = 1, 4½ = 2, 5½ = 3, 6½ = 4; 2½ = 1; Maison omitted) |
-| Adresse de départ | `originStreet` / `originCity` / `originState` / `originZip` |
-| Adresse de destination | `destinationStreet` / `destinationCity` / `destinationState` / `destinationZip` |
-| Service, distance, movers, hours, season, subtotal, **total**, special items, provenance, client message | `notes` |
+| Type de logement | `bedrooms`, a **string** (3½ = 1, 4½ = 2, 5½ = 3, 6½ = 4; 2½ = 1; Maison omitted) |
+| Service | `serviceType` — `Moving` / `Commercial`, omitted where unmapped |
+| Comment nous avez-vous connus ? | `referralSource` |
+| Adresse de départ | `originStreet`/`City`/`State`/`Zip`, **or** `originAddressFull` |
+| Adresse de destination | `destinationStreet`/`City`/`State`/`Zip`, **or** `destinationAddressFull` |
+| Distance, movers, hours, season, subtotal, **total**, special items, client message | `notes` |
 
 Notes on this mapping:
 
@@ -108,6 +110,19 @@ Notes on this mapping:
   `fullName`, and a blank name falls back to the email or phone rather than
   going out empty. Everything else is omitted when we have no value, never sent
   blank.
+- **Addresses go as components OR the full line, never both** — SmartMoving is
+  explicit about that. Components are sent only when the split produced real
+  structure (a street plus a city or postal code); otherwise the original line
+  goes as `origin/destinationAddressFull` for SmartMoving to parse.
+- **`serviceType` uses SmartMoving's closed vocabulary** (Moving, Packing,
+  MovingAndPacking, LoadOnly, UnloadOnly, Commercial, StorageInBound,
+  StorageOutBound, InnerHouse, JunkRemoval, LaborOnly). `livraison` has no
+  equivalent, so it's omitted rather than guessed — the note still describes it.
+- **`referralSource` carries the form's provenance dropdown.** A value that
+  doesn't match an existing referral source in SmartMoving creates a new one, so
+  the form's fixed list should be aligned with **Settings → Sales → Referral
+  Sources**. (With no `referralSource`, SmartMoving attributes the lead to
+  "Your Website".)
 - **Addresses are split before sending.** SmartMoving wants street / city /
   state / zip, but the form collects one free-text line, so the Worker resolves
   each address twice and merges: a geocoder — Google (if `GOOGLE_MAPS_API_KEY`
