@@ -14,12 +14,12 @@ Decision for v1: encode the doc as-is; adjust by editing `pricing.config.json` d
 ```
 WordPress/Elementor page  --POST inputs-->  Cloudflare Worker  --returns price-->  page renders quote
 (HTML widget, thin client)                  (pricing.js, hidden)        |
-                                                                        +--> create lead item in Monday.com (CRM)
+                                                                        +--> create lead in SmartMoving (CRM)
 ```
 
 - Pricing logic lives in the Worker, never in the browser → Bruno's formula stays private.
 - The Elementor widget is a dumb form: collect inputs, POST, render the returned number.
-- On a successful quote, the Worker creates a lead item in Bruno's Monday.com board.
+- On a successful quote, the Worker creates a lead in Rapido's SmartMoving CRM.
 - Pure rule-based. **No Claude API** — the logic is deterministic; an LLM would only add latency and inconsistency.
 
 ## 2. Repo structure
@@ -30,7 +30,8 @@ rapido-quote/
 ├── pricing.config.json      ← rates, hours, season table, exclusions (Bruno edits this)
 ├── pricing.js               ← deterministic computeQuote() (do not hand-edit numbers here)
 ├── src/
-│   └── worker.js            ← fetch handler: CORS, parse, computeQuote, create Monday lead, respond
+│   ├── worker.js            ← fetch handler: CORS, parse, computeQuote, create lead, respond
+│   └── smartmoving.js       ← quote -> SmartMoving lead payload + POST
 ├── wrangler.toml            ← Worker config + bindings/secrets
 ├── test/
 │   └── pricing.test.js      ← assert doc section 8 examples (1241.73 / 1427.99 / 3104.33)
@@ -84,21 +85,24 @@ Exclusions → custom quote: distance > 700 km, any special flag (piano, coffre-
 accès difficile, entreposage, adresses multiples, commercial), or any size whose `autoQuote` is false.
 All sizes default to `autoQuote: true` per the doc; 2½, 6½+, and Maison are flagged to watch.
 
-## 5. Lead destination — Monday.com (CRM)
+## 5. Lead destination — SmartMoving (CRM)
 
-Rapido already runs its pipeline in Monday (the doc's pricing data was exported from it), so the
-lead goes straight into a Monday board as a new item — no email provider, no DNS change, no Outlook
-deliverability problem. This deletes the entire email branch.
+Rapido runs its sales pipeline in SmartMoving, so the lead goes straight in as a new SmartMoving
+lead — no email provider, no DNS change, no Outlook deliverability problem. This deletes the entire
+email branch. (Leads went to a Monday board until Aug 2026; SmartMoving replaced it.)
 
-- **Mechanism:** on a successful quote the Worker calls Monday's GraphQL API (`create_item` mutation).
-- **Needed from Bruno (one-time):** Monday API token, target `boardId`, `groupId`, and the column IDs to
-  map — customer name, phone, email, size, movers, distance, date, and the computed total.
-- **Secret:** `wrangler secret put MONDAY_TOKEN`. Never in the repo.
-- **Column values:** passed as a JSON string in the mutation. Claude Code writes the mutation; Bruno supplies the IDs.
+- **Mechanism:** on a successful quote the Worker POSTs JSON to SmartMoving's lead-provider endpoint,
+  `POST /api/leads/from-provider/v2?providerKey=…`. Every field sits at the root of the body.
+- **Needed from Bruno (one-time):** the SmartMoving provider key (Settings → Sales → Lead Providers →
+  Your Website → View Instructions), and optionally a `branchId` if leads should pin to one branch.
+- **Secret:** `wrangler secret put SMARTMOVING_PROVIDER_KEY`. Never in the repo — the key alone
+  authorises lead creation.
+- **Field mapping:** `buildLeadPayload()` in `src/smartmoving.js`, pinned by `test/smartmoving.test.js`.
+  Name is the only required field; the quote breakdown and provenance go into `notes`.
 - **Abuse guard (required for v1):** this is a public endpoint creating CRM items. Add a honeypot field +
   a basic per-IP rate limit in the Worker. Add Cloudflare Turnstile later only if spam shows up.
 - **Optional later:** also email servicerapido@outlook.com as a secondary notification — not needed if the
-  lead lands in Monday.
+  lead lands in SmartMoving.
 
 ## 6. Elementor integration
 
@@ -113,15 +117,16 @@ deliverability problem. This deletes the entire email branch.
 
 ## 7. For Bruno / open items
 
-- From Bruno: Monday API token + target `boardId`, `groupId`, and the column IDs for the lead fields.
+- From Bruno: the SmartMoving provider key (+ optional `branchId`). Confirm whether the SmartMoving
+  account has custom Opportunity fields worth mapping instead of leaving that data in `notes`.
 - During testing, decide whether 2½, 6½+, Maison stay `autoQuote: true` or flip to custom quote.
 - Long-distance (distance/90) is unvalidated in the doc — sanity-check a few real long hauls before trusting it.
 - (Optional) put a subdomain like `api.servicerapido.ca` on Cloudflare for a clean Worker URL — not required, `workers.dev` works.
 
 ## 8. Claude Code task list (build these around the fixed core above)
 
-1. `src/worker.js` — fetch handler, CORS + OPTIONS, JSON parse, call `computeQuote`, create Monday lead item, respond. Include honeypot + per-IP rate limit.
-2. `wrangler.toml` — Worker name, compatibility date, `MONDAY_TOKEN` secret ref, and board/group/column IDs as vars.
+1. `src/worker.js` — fetch handler, CORS + OPTIONS, JSON parse, call `computeQuote`, create the SmartMoving lead (`src/smartmoving.js`), respond. Include honeypot + per-IP rate limit.
+2. `wrangler.toml` — Worker name, compatibility date, `SMARTMOVING_PROVIDER_KEY` secret ref, and the non-secret vars (CORS origin, rate limit, optional branch ID).
 3. `test/pricing.test.js` — assert the three doc section-8 totals; run before every deploy.
 4. `elementor/widget.html` — French UI: size select, movers, date picker, distance (km), special-item checkboxes,
    "Obtenir ma soumission" button, result/custom-quote rendering, error states.

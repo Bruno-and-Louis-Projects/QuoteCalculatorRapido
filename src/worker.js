@@ -5,15 +5,16 @@
 //   2. Parse the POST /quote body.
 //   3. Honeypot + basic per-IP rate limit (abuse guard, SPEC §5).
 //   4. computeQuote() — pricing logic stays server-side, never in the browser.
-//   5. On an instant quote, create a lead item in Monday.com (CRM).
+//   5. On a submission, create a lead in SmartMoving (CRM).
 //   6. Respond with the JSON contract from SPEC §3.
 //
 // Pricing numbers live in pricing.config.json; logic in pricing.js. This file
-// only does transport, abuse-guarding, and the Monday side effect.
+// only does transport, abuse-guarding, and the SmartMoving side effect.
 
 import { computeQuote } from "../pricing.js";
 import pricingConfig from "../pricing.config.json"; // bundler inlines this JSON
 import widgetClient from "../elementor/widget.client.txt"; // served at GET /widget.js
+import { createSmartMovingLead, isConfigured, clean } from "./smartmoving.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -33,6 +34,33 @@ export default {
           "Access-Control-Allow-Origin": "*",
         },
       });
+    }
+
+    // --- Config probe -------------------------------------------------------
+    // GET /health answers the one question that is otherwise invisible from
+    // outside the Worker: does THIS version have the SmartMoving key bound?
+    // Bindings are versioned, so a build created before the secret was set
+    // reports false while still serving perfectly correct quotes — which is
+    // exactly the failure that looks like success. Reports only WHETHER each
+    // key is present, never its value.
+    if (request.method === "GET" && url.pathname === "/health") {
+      return json(
+        {
+          ok: true,
+          crm: "smartmoving",
+          providerKeyConfigured: isConfigured(env.SMARTMOVING_PROVIDER_KEY),
+          branchIdConfigured: isConfigured(env.SMARTMOVING_BRANCH_ID),
+          googleGeocodingKeyConfigured: isConfigured(env.GOOGLE_MAPS_API_KEY),
+          // NAMES ONLY of everything bound to this version — never any value.
+          // This is what distinguishes "the secret was never set" from "it was
+          // set under a slightly different name" or "it was set as a BUILD
+          // variable, which never reaches the runtime". Without it, a false
+          // above has several indistinguishable causes.
+          boundNames: Object.keys(env).sort(),
+        },
+        200,
+        { ...cors, "Cache-Control": "no-store" }
+      );
     }
 
     // --- CORS preflight ---
@@ -81,7 +109,7 @@ export default {
       return json(result, 400, cors);
     }
 
-    // --- Create the Monday lead (instant quotes AND custom-quote requests) ---
+    // --- Create the SmartMoving lead (instant quotes AND custom-quote requests) ---
     // We want the lead either way: an instant quote is a hot lead, and a
     // custom-quote case is one Bruno needs to follow up on manually.
     const lead = {
@@ -92,274 +120,36 @@ export default {
       destAddress: clean(body?.destAddress),
       provenance: clean(body?.provenance),
       notes: clean(body?.notes),
-      // Exact Monday status label for the chosen service.
+      // Human-readable label for the chosen service (used in the lead note).
       serviceLabel: pricingConfig.services?.[quoteInput.service]?.label || "",
     };
 
-    // Don't let a Monday outage block the customer's quote: fire it but still
-    // return the price. ctx.waitUntil keeps the request alive for the call.
-    if (isConfigured(env.MONDAY_TOKEN) && isConfigured(env.MONDAY_BOARD_ID)) {
+    // Don't let a SmartMoving outage block the customer's quote: fire it but
+    // still return the price. ctx.waitUntil keeps the request alive for the call.
+    if (isConfigured(env.SMARTMOVING_PROVIDER_KEY)) {
       ctx.waitUntil(
-        createMondayLead({ lead, input: quoteInput, result, env }).catch((err) => {
-          console.error("Monday lead creation failed:", err?.message || err);
+        createSmartMovingLead({ lead, input: quoteInput, result, env }).catch((err) => {
+          console.error("SmartMoving lead creation failed:", err?.message || err);
         })
+      );
+    } else {
+      // Loud on purpose. A missing key drops the lead in a way the customer's
+      // response can't reveal — they still get their price — so without this
+      // line `wrangler tail` shows nothing at all and a dead integration looks
+      // identical to a healthy one. The usual cause is a Worker VERSION that
+      // predates the secret: a version is an immutable snapshot of code AND
+      // bindings, so adding a secret creates a new version rather than
+      // attaching to existing ones (a preview build from before the secret was
+      // set will never see it). Rebuild, don't re-set the secret.
+      console.error(
+        "SMARTMOVING_PROVIDER_KEY not configured on this Worker version — lead NOT sent",
+        `(${result.type}, ${result.total ?? "n/a"} $)`
       );
     }
 
     return json(result, 200, cors);
   },
 };
-
-// ---------------------------------------------------------------------------
-// Monday.com — create a lead item via GraphQL create_item mutation.
-//
-// Bruno supplies the board/group/column IDs as wrangler vars and the token as a
-// secret. Column *types* in Monday decide the value format; the defaults below
-// cover the common types (text / phone / email / numbers / date). If a board
-// column is a different type, adjust the matching line in buildColumnValues().
-// ---------------------------------------------------------------------------
-async function createMondayLead({ lead, input, result, env }) {
-  // Monday's "Adresse de Départ / Destination" columns are Location type, which
-  // need lat/lng — so geocode the free-text addresses first. Do it SEQUENTIALLY,
-  // not in parallel: the default provider (Nominatim) allows only ~1 request/sec,
-  // so two concurrent lookups get one throttled — that's why a second address
-  // could come back empty. Google has no such limit, so only pace the calls on
-  // the Nominatim fallback. This runs in ctx.waitUntil, so the wait never delays
-  // the customer's quote. A failure just yields null and the column is skipped.
-  const paceNominatim = !isConfigured(env.GOOGLE_MAPS_API_KEY);
-  const originGeo = await geocode(lead.originAddress, env);
-  if (paceNominatim && lead.originAddress && lead.destAddress) await sleep(1100);
-  const destGeo = await geocode(lead.destAddress, env);
-  const columnValues = buildColumnValues({ lead, input, result, env, originGeo, destGeo });
-
-  const itemName = lead.name || lead.email || lead.phone || "Soumission web";
-
-  // create_labels_if_missing lets status columns (Service, Provenance) accept a
-  // label even if it isn't pre-defined on the board, instead of failing the
-  // whole item. We still send the exact known labels.
-  const query = `
-    mutation ($boardId: ID!, $groupId: String, $itemName: String!, $columnValues: JSON) {
-      create_item(
-        board_id: $boardId,
-        group_id: $groupId,
-        item_name: $itemName,
-        column_values: $columnValues,
-        create_labels_if_missing: true
-      ) { id }
-    }`;
-
-  const variables = {
-    boardId: String(env.MONDAY_BOARD_ID),
-    groupId: isConfigured(env.MONDAY_GROUP_ID) ? env.MONDAY_GROUP_ID : null,
-    itemName,
-    columnValues: JSON.stringify(columnValues),
-  };
-
-  const res = await fetch("https://api.monday.com/v2", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: env.MONDAY_TOKEN,
-      "API-Version": "2024-01",
-    },
-    body: JSON.stringify({ query, variables }),
-  });
-
-  const data = await res.json();
-  if (data.errors) {
-    throw new Error("Monday API error: " + JSON.stringify(data.errors));
-  }
-  return data;
-}
-
-// Maps our lead fields onto the "New Leads Automatic Quote BETA" board columns.
-// The board has no dedicated size/movers/distance/total columns, so the full
-// quote breakdown goes into the "Détails / Projet" long-text column. The two
-// addresses map to the board's Location (map-pin) columns, filled from geocoded
-// coordinates (originGeo / destGeo). Each MONDAY_COL_* var is a column ID; an
-// unset (empty / "<PLACEHOLDER>") var is simply skipped.
-function buildColumnValues({ lead, input, result, env, originGeo, destGeo }) {
-  const cv = {};
-  const colId = (v) => (isConfigured(v) ? v : null);
-
-  // Téléphone (phone): { phone, countryShortName }
-  if (colId(env.MONDAY_COL_PHONE) && lead.phone) {
-    cv[env.MONDAY_COL_PHONE] = { phone: lead.phone, countryShortName: "CA" };
-  }
-  // Adresse Courriel (email): { email, text }
-  if (colId(env.MONDAY_COL_EMAIL) && lead.email) {
-    cv[env.MONDAY_COL_EMAIL] = { email: lead.email, text: lead.email };
-  }
-  // Nom du client (text)
-  if (colId(env.MONDAY_COL_CLIENT_NAME) && lead.name) {
-    cv[env.MONDAY_COL_CLIENT_NAME] = lead.name;
-  }
-  // Adresses de départ / destination (location): { lat, lng, address }.
-  // Monday location columns require coordinates; the free-text address is only
-  // the display label. If geocoding failed we skip the column — the address
-  // still lands in "Détails / Projet" below, so it's never lost.
-  const originLoc = locationValue(lead.originAddress, originGeo);
-  if (colId(env.MONDAY_COL_ORIGIN) && originLoc) {
-    cv[env.MONDAY_COL_ORIGIN] = originLoc;
-  }
-  const destLoc = locationValue(lead.destAddress, destGeo);
-  if (colId(env.MONDAY_COL_DEST) && destLoc) {
-    cv[env.MONDAY_COL_DEST] = destLoc;
-  }
-  // Service (status): { label } — exact board label
-  if (colId(env.MONDAY_COL_SERVICE) && lead.serviceLabel) {
-    cv[env.MONDAY_COL_SERVICE] = { label: lead.serviceLabel };
-  }
-  // Provenance (status): { label } — value comes straight from the form select
-  if (colId(env.MONDAY_COL_PROVENANCE) && lead.provenance) {
-    cv[env.MONDAY_COL_PROVENANCE] = { label: lead.provenance };
-  }
-  // Date de service (date): the moving date → { date: "YYYY-MM-DD" }
-  if (colId(env.MONDAY_COL_SERVICE_DATE) && input.date) {
-    cv[env.MONDAY_COL_SERVICE_DATE] = { date: input.date };
-  }
-  // Date contact (date): submission date = today (UTC)
-  if (colId(env.MONDAY_COL_CONTACT_DATE)) {
-    cv[env.MONDAY_COL_CONTACT_DATE] = { date: new Date().toISOString().slice(0, 10) };
-  }
-  // Détails / Projet (long_text): the full quote breakdown
-  if (colId(env.MONDAY_COL_DETAILS)) {
-    cv[env.MONDAY_COL_DETAILS] = { text: buildDetails({ lead, input, result }) };
-  }
-
-  return cv;
-}
-
-// Human-readable quote summary dropped into the "Détails / Projet" column so
-// Bruno sees the whole computation at a glance, instant or custom.
-function buildDetails({ lead, input, result }) {
-  const flags = (input.flags || []).map(flagLabel).join(", ") || "aucun";
-  const lines = [];
-  if (result.type === "instant_quote") {
-    const b = result.breakdown;
-    lines.push("Soumission instantanée (calculateur web)");
-    lines.push(`Service : ${lead.serviceLabel || "Déménagement Résidentiel"}`);
-    lines.push(`Logement : ${sizeLabel(input.size)}`);
-    lines.push(`Déménageurs : ${b.movers}`);
-    lines.push(`Distance : ${input.distanceKm} km`);
-    lines.push(`Date du déménagement : ${input.date}`);
-    lines.push(`Heures estimées : ${b.totalHours} h (travail ${b.workHours} + déplacement ${b.travelHours})`);
-    lines.push(`Tarif horaire : ${b.hourlyRate} $/h`);
-    lines.push(`Majoration saison : ×${b.seasonMult}`);
-    lines.push(`Main-d'œuvre : ${b.laborSubtotal} $`);
-    if (b.specialFee) lines.push(`Frais éléments particuliers : ${b.specialFee} $`);
-    if (b.fuelCost) lines.push(`Carburant : ${b.fuelCost} $`);
-    lines.push(`TOTAL (taxes en sus) : ${result.total} $`);
-  } else {
-    lines.push("Soumission PERSONNALISÉE requise (calculateur web)");
-    lines.push(`Raison : ${reasonLabel(result.reason)}`);
-    lines.push(`Service : ${lead.serviceLabel || "—"}`);
-    lines.push(`Logement : ${sizeLabel(input.size)}`);
-    lines.push(`Distance : ${input.distanceKm} km`);
-    lines.push(`Date du déménagement : ${input.date}`);
-  }
-  lines.push(`Adresse de départ : ${lead.originAddress || "—"}`);
-  lines.push(`Adresse de destination : ${lead.destAddress || "—"}`);
-  lines.push(`Éléments particuliers : ${flags}`);
-  if (lead.notes) {
-    lines.push("");
-    lines.push(`Notes du client : ${lead.notes}`);
-  }
-  return lines.join("\n");
-}
-
-// ---------------------------------------------------------------------------
-// Geocoding — turn a free-text address into { lat, lng } for Monday's Location
-// columns (which require coordinates; an address alone can't set the cell).
-//
-// Reliability is the whole game here. The keyless public geocoders (Nominatim,
-// Photon) rate-limit HARD by IP, and a Cloudflare Worker shares its egress IP
-// with countless other tenants — so a lookup can be throttled at random. That's
-// exactly why the *second* address (destination) kept coming back empty. The fix
-// is to not depend on any single provider: we try them in order and, for the
-// throttle-prone ones, retry once before moving on. If a key is set we use the
-// keyed provider first (no shared-IP limits). Best-effort: if every provider
-// fails the caller skips the column and the address still lands in Détails.
-// ---------------------------------------------------------------------------
-async function geocode(address, env) {
-  if (!address) return null;
-  const providers = [];
-  if (isConfigured(env.GOOGLE_MAPS_API_KEY)) {
-    providers.push(() => geocodeGoogle(address, env.GOOGLE_MAPS_API_KEY));
-  }
-  providers.push(() => geocodeNominatim(address));
-  providers.push(() => geocodePhoton(address));
-
-  for (const run of providers) {
-    try {
-      const geo = await run();
-      if (geo) return geo;
-    } catch (err) {
-      console.error("Geocoder error:", err?.message || err);
-    }
-  }
-  return null;
-}
-
-async function geocodeGoogle(address, key) {
-  const url =
-    "https://maps.googleapis.com/maps/api/geocode/json?address=" +
-    encodeURIComponent(address) + "&region=ca&key=" + encodeURIComponent(key);
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  const data = await res.json();
-  const loc = data?.results?.[0]?.geometry?.location;
-  if (!loc || typeof loc.lat !== "number" || typeof loc.lng !== "number") return null;
-  return { lat: String(loc.lat), lng: String(loc.lng) };
-}
-
-// OpenStreetMap Nominatim. Requires an identifying User-Agent. Retries once on a
-// throttle/5xx (returns null on a genuine "no match" so we don't waste the retry).
-async function geocodeNominatim(address) {
-  const url =
-    "https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ca&q=" +
-    encodeURIComponent(address);
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (attempt) await sleep(1500); // back off before the retry
-    const res = await fetch(url, {
-      headers: { "User-Agent": "GroupeRapidoQuoteBot/1.0 (https://servicerapido.com)" },
-    });
-    if (res.status === 429 || res.status === 403 || res.status >= 500) continue; // throttled → retry
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!Array.isArray(data) || !data.length) return null;
-    const { lat, lon } = data[0];
-    return lat && lon ? { lat: String(lat), lng: String(lon) } : null;
-  }
-  return null; // exhausted retries → caller falls through to the next provider
-}
-
-// Komoot Photon (also OSM-based) — a second, independent free provider used as a
-// fallback when Nominatim throttles our shared IP. Coordinates are [lng, lat].
-async function geocodePhoton(address) {
-  const url = "https://photon.komoot.io/api/?limit=1&q=" + encodeURIComponent(address);
-  const res = await fetch(url, {
-    headers: { "User-Agent": "GroupeRapidoQuoteBot/1.0 (https://servicerapido.com)" },
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  const coords = data?.features?.[0]?.geometry?.coordinates;
-  if (!Array.isArray(coords) || coords.length < 2) return null;
-  return { lat: String(coords[1]), lng: String(coords[0]) };
-}
-
-// Build a Monday Location column value. Needs coordinates; returns null (skip)
-// when the address is empty or geocoding didn't resolve.
-function locationValue(address, geo) {
-  if (!address || !geo || !geo.lat || !geo.lng) return null;
-  return { lat: geo.lat, lng: geo.lng, address };
-}
-
-// Small delay used to keep the keyless Nominatim geocoder within its ~1 req/sec
-// usage policy when we look up two addresses back to back.
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -401,38 +191,8 @@ function json(obj, status, cors) {
   });
 }
 
-// A var is "configured" only if it's a non-empty string that isn't a leftover
-// "<PLACEHOLDER>". Lets us ship wrangler.toml with placeholders and have the
-// Worker simply skip whatever isn't filled in yet.
-function isConfigured(v) {
-  return typeof v === "string" && v.trim() !== "" && !v.trim().startsWith("<");
-}
-
 function toNumber(v) {
   if (typeof v === "number") return v;
   if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) return Number(v);
   return v; // let validate() reject it
 }
-function clean(v) { return typeof v === "string" ? v.trim() : ""; }
-
-// Human-readable size label for the CRM, falling back to the raw key.
-const SIZE_LABELS = {
-  "2.5": "2½", "3.5": "3½", "4.5": "4½", "5.5": "5½", "6.5": "6½ et plus", maison: "Maison",
-};
-function sizeLabel(size) { return SIZE_LABELS[size] || size || ""; }
-
-// Labels for special-item flags and custom-quote reasons (used in the CRM note).
-const FLAG_LABELS = {
-  piano: "Piano", coffreFort: "Coffre-fort", objetArt: "Objet d'art",
-  accesDifficile: "Accès difficile", entreposage: "Entreposage",
-  adressesMultiples: "Adresses multiples", commercial: "Commercial",
-};
-function flagLabel(f) { return FLAG_LABELS[f] || f; }
-
-const REASON_LABELS = {
-  service: "Service non résidentiel (soumission sur mesure)",
-  distance: "Distance supérieure à 700 km",
-  size: "Type de logement à confirmer",
-  special: "Élément particulier à évaluer",
-};
-function reasonLabel(r) { return REASON_LABELS[r] || r || ""; }
