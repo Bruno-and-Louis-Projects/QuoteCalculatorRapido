@@ -51,6 +51,12 @@ export default {
           providerKeyConfigured: isConfigured(env.SMARTMOVING_PROVIDER_KEY),
           branchIdConfigured: isConfigured(env.SMARTMOVING_BRANCH_ID),
           googleGeocodingKeyConfigured: isConfigured(env.GOOGLE_MAPS_API_KEY),
+          // NAMES ONLY of everything bound to this version — never any value.
+          // This is what distinguishes "the secret was never set" from "it was
+          // set under a slightly different name" or "it was set as a BUILD
+          // variable, which never reaches the runtime". Without it, a false
+          // above has several indistinguishable causes.
+          boundNames: Object.keys(env).sort(),
         },
         200,
         { ...cors, "Cache-Control": "no-store" }
