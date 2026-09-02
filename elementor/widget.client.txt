@@ -19,6 +19,20 @@
   var BASE = (SCRIPT && SCRIPT.src ? SCRIPT.src : "").replace(/\/widget\.js(?:\?.*)?$/, "");
   var WORKER_URL = (BASE || "https://quotecalculatorrapido.brunomjacques.workers.dev") + "/quote";
   var CONTACT_URL = "/contact"; // page de repli pour les soumissions personnalisées
+
+  // Affichage du prix dans la page après l'envoi.
+  // false : le prix est calculé et le lead est créé dans SmartMoving comme
+  //         avant, mais la page n'affiche qu'un message de confirmation —
+  //         SmartMoving envoie lui-même la soumission par courriel.
+  // true  : réaffiche l'estimation (prix, détail, bouton de dépôt Stripe) ou la
+  //         carte « Soumission sur mesure ». Aucune autre modification requise.
+  var SHOW_ESTIMATE = false;
+  var CONFIRMATION_HTML =
+    "<div class='rq-card is-quote'>" +
+      "<div class='rq-price'>Merci de votre intérêt&nbsp;!</div>" +
+      "<p>Votre soumission vous sera envoyée par courriel très prochainement.</p>" +
+      "<p class='rq-note'>N'hésitez pas à communiquer avec nous si vous avez des questions.</p>" +
+    "</div>";
   // Bouton de paiement du dépôt (Stripe Buy Button). La clé publishable est
   // publique par conception — sans danger côté navigateur.
   var STRIPE_BUY_BUTTON_ID = "buy_btn_1TmawsCYOQSoDq0vsRkT8tsi";
@@ -222,7 +236,7 @@
       st.textContent = CSS;
       document.head.appendChild(st);
     }
-    loadStripeBuyButton(); // preload so the deposit button is ready when a quote shows
+    if (SHOW_ESTIMATE) loadStripeBuyButton(); // preload so the deposit button is ready when a quote shows
     mount.innerHTML = HTML;
 
     var form = mount.querySelector("#rq-form");
@@ -264,7 +278,7 @@
       };
 
       btn.disabled = true;
-      btn.textContent = "Calcul en cours…";
+      btn.textContent = SHOW_ESTIMATE ? "Calcul en cours…" : "Envoi en cours…";
 
       fetch(WORKER_URL, {
         method: "POST",
@@ -278,6 +292,13 @@
               .map(function (msg) { return "<li>" + msg + "</li>"; }).join("");
             show("<div class='rq-card is-error'><strong>Veuillez vérifier le formulaire :</strong>" +
                  "<ul class='rq-errors'>" + items + "</ul></div>");
+            return;
+          }
+          if (!SHOW_ESTIMATE) {
+            // Le prix (data.total) est volontairement ignoré ici : la soumission
+            // part par courriel via SmartMoving. Remettre SHOW_ESTIMATE à true
+            // pour retrouver l'affichage ci-dessous.
+            show(CONFIRMATION_HTML);
             return;
           }
           if (data.type === "custom_quote") {
