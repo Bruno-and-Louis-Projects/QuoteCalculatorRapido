@@ -159,6 +159,14 @@ Notes on this mapping:
 
 ## Notes
 
+- **The price is currently NOT shown in the page.** SmartMoving now emails the
+  quote itself, so after "Obtenir ma soumission" the widget shows only a French
+  confirmation card ("Merci de votre intérêt ! Votre soumission vous sera
+  envoyée par courriel…"). The Worker still computes the price and still
+  creates the SmartMoving lead exactly as before; only the rendering is
+  suppressed. To bring the on-page estimate (price, breakdown, Stripe deposit
+  button, "Soumission sur mesure" card) back, flip `SHOW_ESTIMATE` to `true` at
+  the top of `elementor/widget.client.txt` and merge — nothing else to change.
 - **Pricing is server-side only** — Bruno's formula never ships to the browser.
 - **Abuse guard:** a honeypot field + basic per-IP rate limit live in the
   Worker. The rate limit is per-isolate (good enough for v1); upgrade to KV /
